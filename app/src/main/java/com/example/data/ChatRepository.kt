@@ -446,85 +446,118 @@ class ChatRepository(
             )
             messageDao.insertMessage(replyMessage)
             contactDao.updateLastMessage(botPhone, replyText, timestamp)
-            
-            val contact = contactDao.getContactByPhone(botPhone)
-            if (contact != null) {
-                contactDao.updateUnreadCount(botPhone, contact.unreadCount + 1)
-            }
             contactDao.updateTypingStatus(botPhone, "")
         }
     }
 
     private fun generateBotReply(msg: String, userName: String, userStatus: String): String {
-        val clean = msg.trim().lowercase()
+        val clean = msg.trim()
+            .replace("?", "")
+            .replace("।", "")
+            .replace(",", "")
+            .replace("!", "")
+            .replace("-", "")
+            .replace(".", "")
+            .replace("\r", "")
+            .replace("\n", " ")
+            .lowercase()
+
+        val noSpaces = clean.replace(" ", "")
+
         return when {
-            // 14. এই অ্যাপটি কেমন আছে? / কেমন আছে / কেমন অ্যাপ
-            clean.contains("কেমন আছে") || (clean.contains("কেমন") && (clean.contains("অ্যাপ") || clean.contains("প্রজেক্ট") || clean.contains("আইডিয়া") || clean.contains("বার্তা"))) -> {
-                "এই অ্যাপটা ইয়সির আরাফাত সৌখিন এবং অন্নদাশঙ্কর উৎসব মিলে তৈরি করেছে। অ্যাপটার নাম বার্তা (Chat)। তারা চেয়েছিলো যেন স্টুডেন্টরা সহজে, distraction ছাড়া এবং নিরাপদভাবে চ্যাট করতে পারে। অ্যাপটায় রিয়াল-টাইম মেসেজিং, ছবি-ভিডিও পাঠানো, গ্রুপ তৈরি করা এবং মেসেজ ডিলিট করার সুবিধা আছে। এটাকে তারা শুধু একটা প্রজেক্ট হিসেবে না দেখে, একটা ছোট স্টার্টআপ আইডিয়া হিসেবে দেখছে।"
-            }
-
-            // 13. এই অ্যাপটা কে বানিয়েছে? / কে বানিয়েছে / কে বানাল / কারা বানাল
-            clean.contains("কে বানিয়েছে") || clean.contains("কে বানিয়েছে") || clean.contains("কে বানাল") || clean.contains("কারা বানিয়েছে") || clean.contains("কারা বানিয়েছে") || clean.contains("কারা তৈরি") || clean.contains("কে তৈরি") || clean.contains("কারা বানাল") -> {
-                "এই অ্যাপটা আমি ইয়সির আরাফাত সৌখিন এবং অন্নদাশঙ্কর উৎসব মিলে যৌথভাবে তৈরি করেছে।"
-            }
-
-            // 1. অ্যাপের নাম কী? / নাম কি / নাম কী / অ্যাপের নাম
-            (clean.contains("নাম") && (clean.contains("কি") || clean.contains("কী") || clean.contains("বল") || clean.contains("জান"))) || clean.contains("অ্যাপের নাম") -> {
+            // 1. অ্যাপের নাম কী?
+            noSpaces.contains("অ্যাপেরনাম") || noSpaces.contains("অ্যাপটারনাম") || noSpaces.contains("অ্যাপটিরনাম") ||
+            clean.contains("অ্যাপের নাম") || clean.contains("অ্যাপটার নাম") || clean.contains("অ্যাপটির নাম") || 
+            (clean.contains("নাম") && (clean.contains("কী") || clean.contains("কি"))) -> {
                 "আমার অ্যাপের নাম বার্তা (Chat)। এটা একটা সহজ এবং স্মার্ট চ্যাট অ্যাপ।"
             }
 
-            // 2. অ্যাপের ফিচারস কী কী? / ফিচার কি কি / ফিচার / ফিচারস / feature
-            clean.contains("ফিচার") || clean.contains("feature") -> {
-                "বার্তা অ্যাপে আছে রিয়েল-টাইম মেসেজিং, ছবি ও ভিডিও পাঠানো, গ্রুপ তৈরি করা, মেসেজ ডিলিট করা (Delete for me এবং Delete for everyone), প্রোফাইল এডিট করা এবং সহজ চ্যাট করার সুবিধা।"
+            // 13. এই অ্যাপটি কেমন আছে? (Check this before other general greeters)
+            noSpaces.contains("অ্যাপটিকেমনি") || noSpaces.contains("অ্যাপটাকেমনি") || 
+            noSpaces.contains("কেমনআছে") || clean.contains("কেমন আছে") -> {
+                if (clean.contains("কেমন আছো") || clean.contains("কেমন আছ") || clean.contains("কেমন আছেন")) {
+                    "আসসালামু আলাইকুম $userName! কেমন আছেন? আমি বার্তা AI সহকারী। বার্তা (Chat) অ্যাপে আপনাকে স্বাগত! আমি মূলত এই অ্যাপ সংক্রান্ত প্রশ্নের উত্তর দিতে পারি। দয়া করে অ্যাপটি সম্পর্কে কোনো প্রশ্ন থাকলে আমাকে জিজ্ঞাসা করুন।"
+                } else {
+                    "এই অ্যাপটা ইয়সির আরাফাত সৌখিন এবং অন্নদাশঙ্কর উৎসব মিলে তৈরি করেছে। অ্যাপটার নাম বার্তা (Chat)। তারা চেয়েছিলো যেন স্টুডেন্টরা সহজে, distraction ছাড়া এবং নিরাপদভাবে চ্যাট করতে পারে। অ্যাপটায় রিয়াল-টাইম মেসেজিং, ছবি-ভিডিও পাঠানো, গ্রুপ তৈরি করা এবং মেসেজ ডিলিট করার সুবিধা আছে। এটাকে তারা শুধু একটা প্রজেক্ট হিসেবে না দেখে, একটা ছোট স্টার্টআপ আইডিয়া হিসেবে দেখছে।"
+                }
             }
 
-            // 6. গ্রুপ চ্যাটে কী সুবিধা আছে? / গ্রুপ চ্যাট সুবিধা
-            clean.contains("গ্রুপ") && (clean.contains("সুবিধা") || clean.contains("ফিচার") || clean.contains("চ্যাট")) -> {
-                "তুমি গ্রুপ তৈরি করতে পারবে। যে প্রথমে গ্রুপ তৈরি করবে সে অ্যাডমিন হবে। অ্যাডমিন গ্রুপের নাম, ছবি, মেম্বার যোগ-বিয়োগ করতে পারবে।"
+            // 12. এই অ্যাপটা কে বানিয়েছে?
+            noSpaces.contains("কেবানিয়েছে") || noSpaces.contains("কেবানিয়েছে") || 
+            noSpaces.contains("কারাবানিয়েছে") || noSpaces.contains("কারাবানিয়েছে") || 
+            clean.contains("কেবানিয়েছে") || clean.contains("কেবানিয়েছে") ||
+            clean.contains("কে বানিয়েছে") || clean.contains("কে বানিয়েছে") || clean.contains("কে বানাল") || 
+            clean.contains("কারা বানিয়েছে") || clean.contains("কারা বানিয়েছে") || clean.contains("কারা তৈরি") || 
+            clean.contains("কে তৈরি") || clean.contains("কারা বানাল") -> {
+                "এই অ্যাপটা আমি ইয়সির আরাফাত সৌখিন এবং অন্নদাশঙ্কর উৎসব মিলে যৌথভাবে তৈরি করেছে।"
             }
 
-            // 3. এটা ব্যবহার করে কী কী সুবিধা পেতে পারি? / সুবিধা / কি সুবিধা / কী সুবিধা
-            clean.contains("সুবিধা") || clean.contains("উপকার") || clean.contains("বেনিফিট") || clean.contains("benefit") -> {
-                "এই অ্যাপ ব্যবহার করে তুমি distraction-free চ্যাট করতে পারবে, কম ইন্টারнеটে ভালো কাজ করবে, গ্রুপ স্টাডি ও প্রজেক্টের জন্য গ্রুপ চ্যাট করতে পারবে এবং সহজ ইন্টারফেসে ব্যবহার করতে পারবে। বিশেষ করে স্টুডেন্টদের জন্য খুব উপযোগী।"
+            // 11. এই অ্যাপটা কেন বানালে?
+            noSpaces.contains("কেনবানালে") || noSpaces.contains("কেনবানিয়েছ") || noSpaces.contains("কেনবানিয়েছো") ||
+            clean.contains("কেন বানালে") || clean.contains("কেন বানিয়েছ") || clean.contains("কেন বানালেন") || 
+            clean.contains("কেন বানিয়েছো") || clean.contains("কেন তৈরি") || clean.contains("উদ্দেশ্য") -> {
+                "তারা দেখতে চেয়েছিলো যেন স্টুডেন্টরা সহজে এবং distraction ছাড়া চ্যাট করতে পারে। তাই এই অ্যাপটা বানিয়েছে।"
             }
 
-            // 4. ফেসবুক বা হোয়াটসঅ্যাপ থেকে আলাদা কেন? / facebook / whatsapp / আলাদা কেন
-            clean.contains("facebook") || clean.contains("whatsapp") || clean.contains("ফেসবুক") || clean.contains("ফেইসবুক") || clean.contains("হোয়াটসঅ্যাপ") || clean.contains("হোয়াটসঅ্যাপ") || clean.contains("আলাদা") -> {
-                "Facebook-এ অনেক distraction থাকে। WhatsApp-এ অনেক ফিচার আছে। আমাদের অ্যাপ শুধু সহজ চ্যাটের উপর ফোকাস করেছে। এতে কোনো অপ্রয়োজনীয় ফিচার নেই, তাই স্টুডেন্টরা সহজে ব্যবহার করতে পারবে।"
+            // 10. এই প্রজেক্টে তুমি কী শিখেছো?
+            noSpaces.contains("কীশিখেছ") || noSpaces.contains("কিশিখেছ") || 
+            clean.contains("কী শিখেছো") || clean.contains("কী শিখেছ") || clean.contains("কি শিখেছ") || 
+            clean.contains("কি শিখেছো") || clean.contains("কি শিখলে") || clean.contains("কি শিখলা") || 
+            clean.contains("শিখেছ") || clean.contains("শিখেছো") || clean.contains("learn") -> {
+                "আমি শিখেছি কীভাবে AI টুল ব্যবহার করে দ্রুত একটা পূর্ণাঙ্গ অ্যাপ বানানো যায় এবং Firebase দিয়ে রিয়েল-টাইম চ্যাট সিস্টেম তৈরি করা যায়।"
             }
 
-            // 5. এটা কারা ব্যবহার করতে পারে? / কারা ব্যবহার করবে / কাদের জন্য
-            clean.contains("কারা ব্যবহার") || clean.contains("কাদের জন্য") || clean.contains("কারা ইউজ") || clean.contains("কারা ব্যবহার করতে পারে") -> {
-                "যেকোনো বয়সের মানুষ ব্যবহার করতে পারে। তবে বিশেষ করে স্কুল-কলেজের স্টুডেন্ট, গ্রুপ স্টাডি, প্রজেক্ট ও ক্লাসের আলোচনার জন্য এটা খুব ভালো।"
-            }
-
-            // 7. মেসেজ ডিলিট করা যায়? / ডিলিট করা যায় / ডিলিট / delete
-            clean.contains("ডিলিট") || clean.contains("delete") || clean.contains("মুছে") -> {
-                "হ্যাঁ। তুমি যে মেসেজ পাঠিয়েছো, সেটা Delete for me এবং Delete for everyone — দুটোই করতে পারবে। আর অন্যের পাঠানো মেসেজ শুধু Delete for me করা যাবে।"
-            }
-
-            // 9. এটা কি ফ্রি? / টাকা লাগবে / free
-            clean.contains("ফ্রি") || clean.contains("free") || clean.contains("টাকা") || clean.contains("পয়সা") || clean.contains("মূল্য") || clean.contains("খরচ") -> {
-                "হ্যাঁ, এই অ্যাপটা সম্পূর্ণ ফ্রি। কোনো টাকা লাগবে না। শুধু মোবাইল নম্বর দিয়ে লগইন করলেই চলবে।"
-            }
-
-            // 10. ভবিষ্যতে আর কী কী ফিচার যোগ করা হবে? / ভবিষ্যতে / আপডেট
+            // 9. ভবিষ্যতে আর কী কী ফিচার যোগ করা হবে?
+            noSpaces.contains("ভবিষ্যতে") || noSpaces.contains("ভবিষ্যত") ||
             clean.contains("ভবিষ্যতে") || clean.contains("ভবিষ্যত") || clean.contains("আপডেট") || clean.contains("update") -> {
                 "ভবিষ্যতে আমরা যোগ করতে চাই ভয়েস মেসেজ, স্ট্যাটাস ফিচার এবং স্টুডেন্টদের জন্য আরও ভালো স্টাডি গ্রুপের সুবিধা।"
             }
 
-            // 11. এই প্রজেক্টে তুমি কী শিখেছো? / কী শিখেছো / তুমি কি শিখেছো
-            clean.contains("শিখেছ") || clean.contains("শিখেছেন") || clean.contains("শিখেছো") || clean.contains("শিখলা") || clean.contains("শিখলে") || clean.contains("learn") -> {
-                "আমি শিখেছি কীভাবে AI টুল ব্যবহার করে দ্রুত একটা পূর্ণাঙ্গ অ্যাপ বানানো যায় এবং Firebase দিয়ে রিয়েল-টাইম চ্যাট সিস্টেম তৈরি করা যায়।"
+            // 8. এটা কি ফ্রি?
+            noSpaces.contains("ফ্রি") || noSpaces.contains("free") || clean.contains("ফ্রি") || clean.contains("free") ||
+            clean.contains("টাকা") || clean.contains("পয়সা") || clean.contains("মূল্য") || clean.contains("খরচ") || clean.contains("পেইড") -> {
+                "হ্যাঁ, এই অ্যাপটা সম্পূর্ণ ফ্রি। কোনো টাকা লাগবে না। শুধু মোবাইল নম্বর দিয়ে লগইন করলেই চলবে।"
             }
 
-            // 12. এই অ্যাপটা কেন বানালে? / কেন বানালে / উদ্দেশ্য কি
-            clean.contains("কেন বানালে") || clean.contains("কেন বানিয়েছ") || clean.contains("কেন বানালেন") || clean.contains("কেন বানিয়েছো") || clean.contains("কেন তৈরি") || clean.contains("উদ্দেশ্য") -> {
-                "তারা দেখতে চেয়েছিলো যেন স্টুডেন্টরা সহজে এবং distraction ছাড়া চ্যাট করতে পারে। তাই এই অ্যাপটা বানিয়েছে।"
+            // 7. মেসেজ ডিলিট করা যায়?
+            noSpaces.contains("ডিলিটকরা") || noSpaces.contains("deleteকরা") ||
+            clean.contains("ডিলিট") || clean.contains("delete") || clean.contains("মুছে") || clean.contains("ডেলিট") -> {
+                "হ্যাঁ। তুমি যে মেসেজ পাঠিয়েছো, সেটা Delete for me এবং Delete for everyone — দুটোই করতে পারবে। আর অন্যের পাঠানো মেসেজ শুধু Delete for me করা যাবে।"
+            }
+
+            // 6. গ্রুপ চ্যাটে কী সুবিধা আছে?
+            noSpaces.contains("গ্রুপচ্যাট") || (clean.contains("গ্রুপ") && (clean.contains("সুবিধা") || clean.contains("ফিচার") || clean.contains("চ্যাট") || clean.contains("কমিউনিটি"))) -> {
+                "তুমি গ্রুপ তৈরি করতে পারবে। যে প্রথমে গ্রুপ তৈরি করবে সে অ্যাডমিন হবে। অ্যাডমিন গ্রুপের নাম, ছবি, মেম্বার যোগ-বিয়োগ করতে পারবে।"
+            }
+
+            // 5. এটা কারা ব্যবহার করতে পারে?
+            noSpaces.contains("কারাব্যবহার") || noSpaces.contains("কাদেরজন্য") ||
+            clean.contains("কারা ব্যবহার") || clean.contains("কাদের জন্য") || clean.contains("কারা ইউজ") || clean.contains("কারা ব্যবহার করতে পারে") -> {
+                "যেকোনো বয়সের মানুষ ব্যবহার করতে পারে। তবে বিশেষ করে স্কুল-কলেজের স্টুডেন্ট, গ্রুপ স্টাডি, প্রজেক্ট ও ক্লাসের আলোচনার জন্য এটা খুব ভালো।"
+            }
+
+            // 4. এটা Facebook বা WhatsApp থেকে আলাদা কেন?
+            noSpaces.contains("facebook") || noSpaces.contains("whatsapp") || noSpaces.contains("আলাদাকেন") ||
+            clean.contains("facebook") || clean.contains("whatsapp") || clean.contains("ফেসবুক") || 
+            clean.contains("ফেইসবুক") || clean.contains("হোয়াটসঅ্যাপ") || clean.contains("হোয়াটসঅ্যাপ") || clean.contains("আলাদা") -> {
+                "Facebook-এ অনেক distraction থাকে। WhatsApp-এ অনেক ফিচার আছে। আমাদের অ্যাপ শুধু সহজ চ্যাটের উপর ফোকাস করেছে। এতে কোনো অপ্রয়োজনীয় ফিচার নেই, তাই স্টুডেন্টরা সহজে ব্যবহার করতে পারবে।"
+            }
+
+            // 3. এটা ব্যবহার করে কী কী সুবিধা পেতে পারি?
+            noSpaces.contains("সুবিধাপেতে") || noSpaces.contains("সুবিধাপাব") ||
+            clean.contains("সুবিধা") || clean.contains("উপকার") || clean.contains("বেনিফিট") || clean.contains("benefit") -> {
+                "এই অ্যাপ ব্যবহার করে তুমি distraction-free চ্যাট করতে পারবে, কম ইন্টারнеটে ভালো কাজ করবে, গ্রুপ স্টাডি ও প্রজেক্টের জন্য গ্রুপ চ্যাট করতে পারবে এবং সহজ ইন্টারফেসে ব্যবহার করতে পারবে। বিশেষ করে স্টুডেন্টদের জন্য খুব উপযোগী।"
+            }
+
+            // 2. অ্যাপের ফিচারস কী কী?
+            noSpaces.contains("ফিচার") || noSpaces.contains("feature") ||
+            clean.contains("ফিচার") || clean.contains("feature") -> {
+                "বার্তা অ্যাপে আছে রিয়েল-টাইম মেসেজিং, ছবি ও ভিডিও পাঠানো, গ্রুপ তৈরি করা, মেসেজ ডিলিট করা (Delete for me এবং Delete for everyone), প্রোফাইল এডিট করা এবং সহজ চ্যাট করার সুবিধা।"
             }
 
             // Greeting fallback check
-            clean.contains("hello") || clean.contains("hi") || clean.contains("হ্যালো") || clean.contains("হাই") || clean.contains("কেমন আছ") || clean.contains("কেমন আছো") || clean.contains("কেমন আছেন") -> {
+            clean.contains("hello") || clean.contains("hi") || clean.contains("হ্যালো") || clean.contains("হাই") || 
+            clean.contains("কেমন আছ") || clean.contains("কেমন আছো") || clean.contains("কেমন আছেন") -> {
                 "আসসালামু আলাইকুম $userName! কেমন আছেন? আমি বার্তা AI সহকারী। বার্তা (Chat) অ্যাপে আপনাকে স্বাগত! আমি মূলত এই অ্যাপ সংক্রান্ত প্রশ্নের উত্তর দিতে পারি। দয়া করে অ্যাপটি সম্পর্কে কোনো প্রশ্ন থাকলে আমাকে জিজ্ঞাসা করুন।"
             }
 
