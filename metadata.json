@@ -1,0 +1,6 @@
+{
+  "name": "বার্তা (Chat)",
+  "description": "বার্তা (Chat) is a WhatsApp clone featuring Bangladesh mobile login, contact lists, and real-time private chatting powered by Firebase Firestore.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
