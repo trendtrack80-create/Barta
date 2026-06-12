@@ -41,3 +41,16 @@ data class LocalUser(
     val profilePicBase64: String = "",
     val status: String = "online"
 )
+
+@Entity(tableName = "statuses")
+data class ChatStatus(
+    @PrimaryKey val id: String,
+    val phone: String,
+    val name: String,
+    val avatar: String,
+    val text: String,
+    val mediaUrl: String? = null,
+    val timestamp: Long,
+    val bgColorVal: Long
+)
+

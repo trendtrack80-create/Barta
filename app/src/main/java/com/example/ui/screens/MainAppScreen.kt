@@ -13,6 +13,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -961,33 +964,95 @@ fun GroupsTabScreen(
 fun StatusTabScreen(
     viewModel: ChatViewModel
 ) {
-    val myPhone by viewModel.myNumber.collectAsStateWithLifecycle()
+    val activeStatuses by viewModel.activeStatuses.collectAsStateWithLifecycle()
+    val myPhoneState by viewModel.myNumber.collectAsStateWithLifecycle()
+    val myPhone = myPhoneState ?: ""
     val myName = viewModel.userDisplayName.value
     val myProfilePic = viewModel.userProfilePicBase64.value
+    val context = LocalContext.current
 
-    var showActiveStoryPlayer by remember { mutableStateOf<UserStatus?>(null) }
-    var showAddStatusDialog by remember { mutableStateOf(false) }
-    var statusInputText by remember { mutableStateOf("") }
-    var myCurrentStatusText by remember { mutableStateOf("") }
+    // Group statuses by phone
+    val groupedStatuses = activeStatuses.groupBy { it.phone }
+    val myStatuses = groupedStatuses[myPhone] ?: emptyList()
+    val otherUsersStatuses = groupedStatuses.filterKeys { it != myPhone }
 
-    // Predefined dynamic stories from other contacts for immersive realism
-    val statusFeed = remember {
-        listOf(
-            UserStatus("01711223344", "আকাশ চৌধুরী", "pic1", "আজকের আবহাওয়া চমৎকার! 🌸🌲", "২ মিনিট আগে", Color(0xFF1E88E5)),
-            UserStatus("01988776655", "রাইসা আলম", "pic3", "নতুন গান শুনছি... 🎵🎧 দারুণ সুর!", "৪৫ মিনিট আগে", Color(0xFF8E24AA)),
-            UserStatus("01555667788", "সাকিব হাসান", "pic5", "কফি প্লাস কোডিং = পারфেকশন ☕💻", "২ ঘণ্টা আগে", Color(0xFFE53935))
-        )
+    // Dialog & post states
+    var showAddTextStatusDialog by remember { mutableStateOf(false) }
+    var showAddPhotoStatusDialog by remember { mutableStateOf<String?>(null) } // holds localPath on pick
+    var showPostChooserDialog by remember { mutableStateOf(false) }
+
+    var textStatusInputText by remember { mutableStateOf("") }
+    var photoStatusInputText by remember { mutableStateOf("") }
+    var selectedBgColorIndex by remember { mutableStateOf(0) }
+
+    val bgColors = listOf(
+        0xFF00897B, // Teal
+        0xFF5E35B1, // Purple
+        0xFFE53935, // Soft Red
+        0xFF1E88E5, // Blue
+        0xFF43A047, // Green
+        0xFFE65100  // Orange
+    )
+
+    // Photo/Image Status picker launcher
+    val photoStatusPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+        onResult = { uri ->
+            if (uri != null) {
+                val localPath = copyUriToLocalFile(context, uri)
+                if (localPath != null) {
+                    showAddPhotoStatusDialog = localPath
+                } else {
+                    Toast.makeText(context, "ছবি লোড করতে সমস্যা হয়েছে!", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    )
+
+    // Active story list being played
+    var activeStoryList by remember { mutableStateOf<List<com.example.data.ChatStatus>?>(null) }
+    var activeStoryIndex by remember { mutableStateOf(0) }
+
+    fun formatTimeAgo(time: Long): String {
+        val diff = System.currentTimeMillis() - time
+        return when {
+            diff < 0 -> "এইমাত্র"
+            diff < 60000 -> "এইমাত্র"
+            diff < 3600000 -> "${diff / 60000} মিনিট আগে"
+            diff < 86400000 -> "${diff / 3600000} ঘণ্টা আগে"
+            else -> "১ দিন আগে"
+        }
     }
 
     Scaffold(
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = { showAddStatusDialog = true },
-                containerColor = WhatsAppGreenVal,
-                contentColor = Color.White,
-                modifier = Modifier.testTag("add_status_fab")
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Icon(Icons.Default.Edit, contentDescription = "Add Status")
+                // Small FAB for text status
+                FloatingActionButton(
+                    onClick = { showAddTextStatusDialog = true },
+                    containerColor = Color(0xFFF0F2F5),
+                    contentColor = WhatsAppTealVal,
+                    modifier = Modifier.size(44.dp).testTag("add_text_status_fab")
+                ) {
+                    Icon(Icons.Default.Edit, contentDescription = "Add Text Status", modifier = Modifier.size(20.dp))
+                }
+
+                // Main FAB for image status
+                FloatingActionButton(
+                    onClick = {
+                        photoStatusPickerLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    },
+                    containerColor = WhatsAppGreenVal,
+                    contentColor = Color.White,
+                    modifier = Modifier.testTag("add_photo_status_fab")
+                ) {
+                    Icon(Icons.Default.CameraAlt, contentDescription = "Add Photo Status")
+                }
             }
         }
     ) { innerPadding ->
@@ -1007,7 +1072,7 @@ fun StatusTabScreen(
                             fontSize = 18.sp
                         )
                         Text(
-                            text = "Logged in as ${myPhone ?: ""}",
+                            text = "Logged in as $myPhone",
                             fontSize = 11.sp,
                             color = Color(0xFFC8E6C9)
                         )
@@ -1028,32 +1093,39 @@ fun StatusTabScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable {
-                            if (myCurrentStatusText.isNotEmpty()) {
-                                showActiveStoryPlayer = UserStatus(
-                                    phone = myPhone ?: "",
-                                    name = "আমার স্ট্যাটাস (আমি)",
-                                    avatar = myProfilePic,
-                                    text = myCurrentStatusText,
-                                    timeAgo = "এইমাত্র",
-                                    bgColor = Color(0xFF00897B)
-                                )
+                            if (myStatuses.isNotEmpty()) {
+                                activeStoryList = myStatuses.sortedBy { it.timestamp }
+                                activeStoryIndex = 0
                             } else {
-                                showAddStatusDialog = true
+                                showPostChooserDialog = true
                             }
                         }
                         .padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Box(contentAlignment = Alignment.BottomEnd) {
-                        AvatarView(name = myName, base64 = myProfilePic, size = 52)
-                        Box(
-                            modifier = Modifier
-                                .size(20.dp)
-                                .background(WhatsAppGreenVal, shape = CircleShape)
-                                .border(1.5.dp, Color.White, CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+                        if (myStatuses.isNotEmpty()) {
+                            // Ring around my status avatar indicating active updates
+                            Box(
+                                modifier = Modifier
+                                    .size(54.dp)
+                                    .border(2.5.dp, WhatsAppGreenVal, CircleShape)
+                                    .padding(3.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                AvatarView(name = myName, base64 = myProfilePic, size = 44)
+                            }
+                        } else {
+                            AvatarView(name = myName, base64 = myProfilePic, size = 52)
+                            Box(
+                                modifier = Modifier
+                                    .size(20.dp)
+                                    .background(WhatsAppGreenVal, shape = CircleShape)
+                                    .border(1.5.dp, Color.White, CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+                            }
                         }
                     }
 
@@ -1063,7 +1135,10 @@ fun StatusTabScreen(
                         Text("আমার স্ট্যাটাস", fontWeight = FontWeight.Bold, color = Color.Black, fontSize = 16.sp)
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = if (myCurrentStatusText.isEmpty()) "স্ট্যাটাস আপডেট করতে টাচ করুন" else myCurrentStatusText,
+                            text = if (myStatuses.isEmpty()) "স্ট্যাটাস আপডেট করতে টাচ করুন" else {
+                                val latest = myStatuses.maxBy { it.timestamp }
+                                if (!latest.mediaUrl.isNullOrEmpty()) "📷 ফটো আপডেট • ${formatTimeAgo(latest.timestamp)}" else "${latest.text} • ${formatTimeAgo(latest.timestamp)}"
+                            },
                             color = Color.Gray,
                             fontSize = 13.sp,
                             maxLines = 1,
@@ -1083,43 +1158,68 @@ fun StatusTabScreen(
             )
 
             Card(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().weight(1f),
                 colors = CardDefaults.cardColors(containerColor = Color.White),
                 shape = RectangleShape
             ) {
-                Column {
-                    statusFeed.forEachIndexed { idx, item ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    showActiveStoryPlayer = item
-                                }
-                                .padding(vertical = 12.dp, horizontal = 16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Status ring around avatar (glowing outline for unread story)
-                            Box(
+                if (otherUsersStatuses.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "কোনো সাম্প্রতিক স্ট্যাটাস আপডেট নেই",
+                            color = Color.Gray,
+                            fontSize = 14.sp
+                        )
+                    }
+                } else {
+                    val entries = otherUsersStatuses.entries.toList()
+                    LazyColumn {
+                        itemsIndexed(entries) { idx, entry ->
+                            val contactPhone = entry.key
+                            val contactStatuses = entry.value.sortedBy { it.timestamp }
+                            val latestStatus = contactStatuses.last()
+
+                            Row(
                                 modifier = Modifier
-                                    .size(54.dp)
-                                    .border(2.5.dp, WhatsAppGreenVal, CircleShape)
-                                    .padding(3.dp),
-                                contentAlignment = Alignment.Center
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        activeStoryList = contactStatuses
+                                        activeStoryIndex = 0
+                                    }
+                                    .padding(vertical = 12.dp, horizontal = 16.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                AvatarView(name = item.name, base64 = item.avatar, size = 44)
+                                // Status ring around avatar (glowing outline for unread story)
+                                Box(
+                                    modifier = Modifier
+                                        .size(54.dp)
+                                        .border(2.5.dp, WhatsAppGreenVal, CircleShape)
+                                        .padding(3.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    AvatarView(name = latestStatus.name, base64 = latestStatus.avatar, size = 44)
+                                }
+
+                                Spacer(modifier = Modifier.width(14.dp))
+
+                                Column {
+                                    Text(latestStatus.name, fontWeight = FontWeight.Bold, color = Color.Black, fontSize = 15.sp)
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = if (!latestStatus.mediaUrl.isNullOrEmpty()) "📷 ফটো আপডেট • ${formatTimeAgo(latestStatus.timestamp)}" else latestStatus.text,
+                                        color = Color.Gray,
+                                        fontSize = 12.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
                             }
 
-                            Spacer(modifier = Modifier.width(14.dp))
-
-                            Column {
-                                Text(item.name, fontWeight = FontWeight.Bold, color = Color.Black, fontSize = 15.sp)
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(item.timeAgo, color = Color.Gray, fontSize = 12.sp)
+                            if (idx < entries.size - 1) {
+                                HorizontalDivider(color = Color(0xFFF1F1F1), modifier = Modifier.padding(start = 82.dp))
                             }
-                        }
-
-                        if (idx < statusFeed.size - 1) {
-                            HorizontalDivider(color = Color(0xFFF1F1F1), modifier = Modifier.padding(start = 82.dp))
                         }
                     }
                 }
@@ -1128,19 +1228,118 @@ fun StatusTabScreen(
     }
 
     // Modal adding My text Status
-    if (showAddStatusDialog) {
+    if (showAddTextStatusDialog) {
+        val currentBgColor = bgColors[selectedBgColorIndex]
         AlertDialog(
-            onDismissRequest = { showAddStatusDialog = false },
-            title = { Text("নতুন স্ট্যাটাস দিন", fontWeight = FontWeight.Bold, color = WhatsAppTealVal) },
+            onDismissRequest = { showAddTextStatusDialog = false },
+            title = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("টেক্সট স্ট্যাটাস দিন", fontWeight = FontWeight.Bold, color = WhatsAppTealVal)
+                    IconButton(
+                        onClick = {
+                            selectedBgColorIndex = (selectedBgColorIndex + 1) % bgColors.size
+                        }
+                    ) {
+                        Icon(Icons.Default.ColorLens, contentDescription = "রং পরিবর্তন", tint = WhatsAppTealVal)
+                    }
+                }
+            },
             text = {
                 Column {
-                    Text("মনোগ্রাহী কোনো স্ট্যাটাস কথা টাইপ করুনঃ", fontSize = 12.sp, color = Color.Gray)
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("আপনার মনের চমৎকার কথাটি টাইপ করুনঃ", fontSize = 12.sp, color = Color.Gray)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(150.dp)
+                            .background(Color(currentBgColor), RoundedCornerShape(8.dp))
+                            .padding(12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        BasicTextField(
+                            value = textStatusInputText,
+                            onValueChange = { textStatusInputText = it },
+                            textStyle = TextStyle(
+                                color = Color.White,
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                                textAlign = TextAlign.Center
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        if (textStatusInputText.isEmpty()) {
+                            Text(
+                                text = "এখানে লিখুন...",
+                                color = Color.White.copy(alpha = 0.6f),
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (textStatusInputText.trim().isNotEmpty()) {
+                            viewModel.postStatus(
+                                text = textStatusInputText.trim(),
+                                mediaUrl = null,
+                                bgColorVal = currentBgColor.toLong()
+                            )
+                            textStatusInputText = ""
+                            showAddTextStatusDialog = false
+                            Toast.makeText(context, "টেক্সট স্ট্যাটাস আপডেট সম্পন্ন হয়েছে!", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(context, "দয়া করে কিছু লিখুন!", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = WhatsAppTealVal)
+                ) {
+                    Text("আপডেট", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddTextStatusDialog = false }) {
+                    Text("বাতিল", color = Color.Red)
+                }
+            }
+        )
+    }
+
+    // Modal adding My photo Status
+    showAddPhotoStatusDialog?.let { localPath ->
+        AlertDialog(
+            onDismissRequest = { showAddPhotoStatusDialog = null },
+            title = { Text("ফটো স্ট্যাটাস দিন", fontWeight = FontWeight.Bold, color = WhatsAppTealVal) },
+            text = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(180.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color.Black),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        AsyncImage(
+                            model = localPath,
+                            contentDescription = "Selected Photo",
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
                     OutlinedTextField(
-                        value = statusInputText,
-                        onValueChange = { statusInputText = it },
+                        value = photoStatusInputText,
+                        onValueChange = { photoStatusInputText = it },
                         modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("উদা: রাইডিং দ্য ক্লাউডস ☁️!") },
+                        placeholder = { Text("ক্যাপশন যোগ করুন (ঐচ্ছিক)...") },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color.Black,
                             unfocusedTextColor = Color.Black,
@@ -1152,9 +1351,14 @@ fun StatusTabScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        myCurrentStatusText = statusInputText
-                        showAddStatusDialog = false
-                        Toast.makeText(viewModel.getApplication(), "স্ট্যাটাস আপডেট সম্পন্ন হয়েছে!", Toast.LENGTH_SHORT).show()
+                        viewModel.postStatus(
+                            text = photoStatusInputText.trim(),
+                            mediaUrl = localPath,
+                            bgColorVal = 0xFF000000L
+                        )
+                        photoStatusInputText = ""
+                        showAddPhotoStatusDialog = null
+                        Toast.makeText(context, "ফটো স্ট্যাটাস আপডেট সম্পন্ন হয়েছে!", Toast.LENGTH_SHORT).show()
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = WhatsAppTealVal)
                 ) {
@@ -1162,90 +1366,223 @@ fun StatusTabScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showAddStatusDialog = false }) {
+                TextButton(onClick = { showAddPhotoStatusDialog = null }) {
                     Text("বাতিল", color = Color.Red)
                 }
             }
         )
     }
 
-    // Full screen story player playing the Status
-    showActiveStoryPlayer?.let { story ->
-        var progress by remember { mutableStateOf(0f) }
+    // Modal chooser dialog for "আমার স্ট্যাটাস" empty tap
+    if (showPostChooserDialog) {
+        AlertDialog(
+            onDismissRequest = { showPostChooserDialog = false },
+            title = { Text("স্ট্যাটাস আপডেট ধরন", fontWeight = FontWeight.Bold, color = WhatsAppTealVal) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Button(
+                        onClick = {
+                            showPostChooserDialog = false
+                            showAddTextStatusDialog = true
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = WhatsAppTealVal),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Edit, contentDescription = null, tint = Color.White)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("মন দিয়ে কিছু লিখুন (Text Status)", color = Color.White)
+                    }
 
-        // Automatically progress story ticking up to 1f and dismissing
-        LaunchedEffect(story) {
-            progress = 0f
-            while (progress < 1.0f) {
-                delay(40) // speed up somewhat for delightful gameplay
-                progress += 0.01f
+                    Button(
+                        onClick = {
+                            showPostChooserDialog = false
+                            photoStatusPickerLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = WhatsAppGreenVal),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.CameraAlt, contentDescription = null, tint = Color.White)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("ছবি শেয়ার করুন (Photo Status)", color = Color.White)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showPostChooserDialog = false }) {
+                    Text("বাতিল", color = Color.Gray)
+                }
             }
-            showActiveStoryPlayer = null
-        }
+        )
+    }
 
-        Dialog(
-            onDismissRequest = { showActiveStoryPlayer = null },
-            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(story.bgColor)
-                    .clickable { showActiveStoryPlayer = null },
-                contentAlignment = Alignment.Center
+    // Dynamic Fullscreen Story Player playing the Status list sequentially
+    activeStoryList?.let { stories ->
+        val storyCount = stories.size
+        if (activeStoryIndex in 0 until storyCount) {
+            val activeStory = stories[activeStoryIndex]
+            var progress by remember { mutableStateOf(0f) }
+
+            // Automatically progress each story ticking up to 1f and shifting index
+            LaunchedEffect(activeStoryIndex) {
+                progress = 0f
+                while (progress < 1.0f) {
+                    delay(50) // 5 seconds per story
+                    progress += 0.01f
+                }
+                // Transition logic
+                if (activeStoryIndex < storyCount - 1) {
+                    activeStoryIndex++
+                } else {
+                    activeStoryList = null
+                }
+            }
+
+            Dialog(
+                onDismissRequest = { activeStoryList = null },
+                properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
             ) {
-                Column(
+                Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(24.dp)
-                        .statusBarsPadding()
-                        .navigationBarsPadding(),
-                    verticalArrangement = Arrangement.SpaceBetween,
-                    horizontalAlignment = Alignment.CenterHorizontally
+                        .background(if (activeStory.mediaUrl.isNullOrEmpty()) Color(activeStory.bgColorVal) else Color.Black)
                 ) {
-                    // Progress Indicator at top
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        LinearProgressIndicator(
-                            progress = { progress },
-                            color = Color.White,
-                            trackColor = Color.White.copy(alpha = 0.3f),
+                    // Center content
+                    if (!activeStory.mediaUrl.isNullOrEmpty()) {
+                        // Image status
+                        AsyncImage(
+                            model = activeStory.mediaUrl,
+                            contentDescription = "Status Story Image",
+                            contentScale = ContentScale.Fit,
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .height(4.dp)
-                                .clip(RoundedCornerShape(2.dp))
+                                .fillMaxSize()
+                                .align(Alignment.Center)
                         )
-                        
+
+                        // Caption overlay at bottom
+                        if (activeStory.text.isNotEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .align(Alignment.BottomCenter)
+                                    .background(Color.Black.copy(alpha = 0.6f))
+                                    .padding(vertical = 20.dp, horizontal = 16.dp)
+                                    .navigationBarsPadding()
+                            ) {
+                                Text(
+                                    text = activeStory.text,
+                                    color = Color.White,
+                                    fontSize = 16.sp,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
+                    } else {
+                        // Text Status
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(24.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = activeStory.text,
+                                fontSize = 26.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+
+                    // Top Indicators & Header controls
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 20.dp)
+                            .statusBarsPadding()
+                    ) {
+                        // Staggered dashes logic
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            for (i in 0 until storyCount) {
+                                val segmentProgress = when {
+                                    i < activeStoryIndex -> 1.0f
+                                    i == activeStoryIndex -> progress
+                                    else -> 0.0f
+                                }
+                                LinearProgressIndicator(
+                                    progress = { segmentProgress },
+                                    color = Color.White,
+                                  trackColor = Color.White.copy(alpha = 0.3f),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(4.dp)
+                                        .clip(RoundedCornerShape(2.dp))
+                                )
+                            }
+                        }
+
                         Spacer(modifier = Modifier.height(14.dp))
 
-                        // Header with name
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            AvatarView(name = story.name, base64 = story.avatar, size = 36)
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Column {
-                                Text(story.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                Text(story.timeAgo, color = Color.White.copy(alpha = 0.7f), fontSize = 11.sp)
+                        // Left Side Avatar Name, Right Side Close
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            AvatarView(name = activeStory.name, base64 = activeStory.avatar, size = 40)
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(activeStory.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                Text(formatTimeAgo(activeStory.timestamp), color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
+                            }
+                            IconButton(onClick = { activeStoryList = null }) {
+                                Icon(Icons.Default.Close, contentDescription = "Close Story", tint = Color.White)
                             }
                         }
                     }
 
-                    // Centered Text content in giant fonts
-                    Text(
-                        text = story.text,
-                        fontSize = 28.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp)
-                    )
+                    // Hot-zones for clicking previous/next (invisible overlay buttons)
+                    Row(modifier = Modifier.fillMaxSize()) {
+                        // Left 1/3: Back trigger
+                        Box(
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .weight(1f)
+                                .clickable(
+                                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                                    indication = null
+                                ) {
+                                    if (activeStoryIndex > 0) {
+                                        activeStoryIndex--
+                                    } else {
+                                        activeStoryList = null
+                                    }
+                                }
+                        )
 
-                    // Footer click to close instruction
-                    Text(
-                        text = "বন্ধ করতে যেকোনো জায়গায় স্পর্শ করুন",
-                        color = Color.White.copy(alpha = 0.6f),
-                        fontSize = 11.sp
-                    )
+                        // Right 2/3: Next trigger
+                        Box(
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .weight(2f)
+                                .clickable(
+                                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                                    indication = null
+                                ) {
+                                    if (activeStoryIndex < storyCount - 1) {
+                                        activeStoryIndex++
+                                    } else {
+                                        activeStoryList = null
+                                    }
+                                }
+                        )
+                    }
                 }
             }
         }

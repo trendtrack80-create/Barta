@@ -18,7 +18,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         "barta_chat_database"
     ).fallbackToDestructiveMigration().build()
 
-    private val repository = ChatRepository(db.contactDao(), db.messageDao(), db.userDao(), context)
+    private val repository = ChatRepository(db.contactDao(), db.messageDao(), db.userDao(), db.statusDao(), context)
     private val sharedPrefs = context.getSharedPreferences("BartaChatPrefs", Context.MODE_PRIVATE)
 
     private val _myNumber = MutableStateFlow<String?>(null)
@@ -38,6 +38,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val activeStatuses: StateFlow<List<ChatStatus>> = repository.getActiveStatusesFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _activeContact = MutableStateFlow<Contact?>(null)
     val activeContact: StateFlow<Contact?> = _activeContact.asStateFlow()
@@ -105,6 +108,25 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     repository.stopListeningToGroups()
                 }
             }
+        }
+
+        // Real-time listener for Firestore statuses
+        viewModelScope.launch {
+            _myNumber.collect { me ->
+                if (me != null) {
+                    repository.startListeningToStatuses {
+                        // real-time status synchronization callback trigger
+                    }
+                } else {
+                    repository.stopListeningToStatuses()
+                }
+            }
+        }
+    }
+
+    fun postStatus(text: String, mediaUrl: String? = null, bgColorVal: Long = 0xFF00897B) {
+        viewModelScope.launch {
+            repository.postStatus(text, mediaUrl, bgColorVal)
         }
     }
 
@@ -434,6 +456,38 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             repository.addContact(dummy1)
             repository.addContact(dummy2)
             repository.addContact(dummy3)
+
+            val dummyStatus1 = ChatStatus(
+                id = "dummy_status_1",
+                phone = "01711122233",
+                name = "সাকিব আল হাসান 🟢",
+                avatar = "",
+                text = "আজকের আবহাওয়া চমৎকার! প্র্যাকটিস সেশন শেষ করলাম। 🌸🏏",
+                timestamp = System.currentTimeMillis() - 1200000L,
+                bgColorVal = 0xFF43A047L
+            )
+            val dummyStatus2 = ChatStatus(
+                id = "dummy_status_2",
+                phone = "01944455566",
+                name = "রাফি চৌধুরী 💬",
+                avatar = "",
+                text = "নতুন গান শুনছি... 🎵🎧 চিল ভাইবস!",
+                timestamp = System.currentTimeMillis() - 3600000L,
+                bgColorVal = 0xFF1E88E5L
+            )
+            val dummyStatus3 = ChatStatus(
+                id = "dummy_status_3",
+                phone = "01300000000",
+                name = "বার্তা সহকারী (Bot) 🤖",
+                avatar = "",
+                text = "আমি আপনাদের প্রশ্নের উত্তর দিতে প্রস্তুত! যেকোনো প্রশ্ন করুন। 💡",
+                timestamp = System.currentTimeMillis() - 7200000L,
+                bgColorVal = 0xFF5E35B1L
+            )
+
+            db.statusDao().insertStatus(dummyStatus1)
+            db.statusDao().insertStatus(dummyStatus2)
+            db.statusDao().insertStatus(dummyStatus3)
         }
     }
 

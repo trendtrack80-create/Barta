@@ -69,9 +69,22 @@ interface UserDao {
     suspend fun updateUser(user: LocalUser)
 }
 
-@Database(entities = [Contact::class, Message::class, LocalUser::class], version = 3, exportSchema = false)
+@Dao
+interface StatusDao {
+    @Query("SELECT * FROM statuses WHERE timestamp >= :cutoff ORDER BY timestamp DESC")
+    fun getActiveStatuses(cutoff: Long): Flow<List<ChatStatus>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertStatus(status: ChatStatus)
+
+    @Query("DELETE FROM statuses WHERE timestamp < :cutoff")
+    suspend fun pruneOldStatuses(cutoff: Long)
+}
+
+@Database(entities = [Contact::class, Message::class, LocalUser::class, ChatStatus::class], version = 4, exportSchema = false)
 abstract class ChatDatabase : RoomDatabase() {
     abstract fun contactDao(): ContactDao
     abstract fun messageDao(): MessageDao
     abstract fun userDao(): UserDao
+    abstract fun statusDao(): StatusDao
 }

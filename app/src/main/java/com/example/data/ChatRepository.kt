@@ -18,6 +18,7 @@ class ChatRepository(
     private val contactDao: ContactDao,
     private val messageDao: MessageDao,
     private val userDao: UserDao,
+    private val statusDao: StatusDao,
     private val context: Context
 ) {
     private var firestore: FirebaseFirestore? = null
@@ -565,5 +566,112 @@ class ChatRepository(
                 "আমি শুধুমাত্র বার্তা অ্যাপ সংক্রান্ত প্রশ্নের উত্তর দিতে পারি। দয়া করে অ্যাপটি সম্পর্কে কোনো প্রশ্ন থাকলে আমাকে জিজ্ঞাসা করো।"
             }
         }
+    }
+
+    fun getActiveStatusesFlow(): Flow<List<ChatStatus>> {
+        val cutoff = System.currentTimeMillis() - 24 * 60 * 60 * 1000
+        repositoryScope.launch {
+            statusDao.pruneOldStatuses(cutoff)
+        }
+        return statusDao.getActiveStatuses(cutoff)
+    }
+
+    suspend fun postStatus(text: String, mediaUrl: String?, bgColorVal: Long) {
+        val myPhone = sharedPrefs.getString("logged_user_phone", "") ?: ""
+        val myName = sharedPrefs.getString("logged_user_display_name", "") ?: ""
+        val myAvatar = sharedPrefs.getString("logged_user_profile_pic", "") ?: ""
+
+        if (myPhone.isEmpty()) return
+
+        val id = UUID.randomUUID().toString()
+        val timestamp = System.currentTimeMillis()
+
+        val status = ChatStatus(
+            id = id,
+            phone = myPhone,
+            name = myName,
+            avatar = myAvatar,
+            text = text,
+            mediaUrl = mediaUrl,
+            timestamp = timestamp,
+            bgColorVal = bgColorVal
+        )
+
+        statusDao.insertStatus(status)
+
+        firestore?.let { db ->
+            val data = hashMapOf(
+                "id" to id,
+                "phone" to myPhone,
+                "name" to myName,
+                "avatar" to myAvatar,
+                "text" to text,
+                "mediaUrl" to (mediaUrl ?: ""),
+                "timestamp" to timestamp,
+                "bgColorVal" to bgColorVal
+            )
+            db.collection("statuses").document(id).set(data)
+                .addOnSuccessListener {
+                    Log.d("BartaChat", "Status synchronized to Firestore successfully!")
+                }
+                .addOnFailureListener { e ->
+                    Log.e("BartaChat", "Failed to upload status to Firestore", e)
+                }
+        }
+    }
+
+    private var statusListenerRegistration: ListenerRegistration? = null
+
+    fun startListeningToStatuses(onStatusChanged: () -> Unit) {
+        statusListenerRegistration?.remove()
+        val db = firestore ?: return
+
+        val cutoff = System.currentTimeMillis() - 24 * 60 * 60 * 1000
+        statusListenerRegistration = db.collection("statuses")
+            .whereGreaterThan("timestamp", cutoff)
+            .addSnapshotListener { snapshots, error ->
+                if (error != null) {
+                    Log.e("BartaChat", "Firestore statuses listen failed", error)
+                    return@addSnapshotListener
+                }
+
+                if (snapshots != null) {
+                    repositoryScope.launch {
+                        for (doc in snapshots.documentChanges) {
+                            val data = doc.document.data
+                            val id = data["id"] as? String ?: ""
+                            val phone = data["phone"] as? String ?: ""
+                            val name = data["name"] as? String ?: ""
+                            val avatar = data["avatar"] as? String ?: ""
+                            val text = data["text"] as? String ?: ""
+                            val mediaUrl = data["mediaUrl"] as? String ?: ""
+                            val timestamp = data["timestamp"] as? Long ?: System.currentTimeMillis()
+                            val bgColorVal = data["bgColorVal"] as? Long ?: 0xFF00897BL
+
+                            if (id.isNotEmpty()) {
+                                val status = ChatStatus(
+                                    id = id,
+                                    phone = phone,
+                                    name = name,
+                                    avatar = avatar,
+                                    text = text,
+                                    mediaUrl = mediaUrl.ifEmpty { null },
+                                    timestamp = timestamp,
+                                    bgColorVal = bgColorVal
+                                )
+                                statusDao.insertStatus(status)
+                            }
+                        }
+                        withContext(Dispatchers.Main) {
+                            onStatusChanged()
+                        }
+                    }
+                }
+            }
+    }
+
+    fun stopListeningToStatuses() {
+        statusListenerRegistration?.remove()
+        statusListenerRegistration = null
     }
 }
