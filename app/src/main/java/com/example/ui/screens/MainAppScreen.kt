@@ -4087,6 +4087,7 @@ fun ManageGroupDialog(
     viewModel: ChatViewModel,
     onDismiss: () -> Unit
 ) {
+    val context = LocalContext.current
     val allContacts by viewModel.contacts.collectAsStateWithLifecycle()
     val nonGroupContacts = allContacts.filter { !it.isGroup }
     
@@ -4100,28 +4101,45 @@ fun ManageGroupDialog(
         }
     }
     
+    val groupCreator = remember(contact.phone, contact.groupParticipants) {
+        context.getSharedPreferences("BartaChatPrefs", Context.MODE_PRIVATE)
+            .getString("group_creator_${contact.phone}", "")?.ifEmpty {
+                contact.groupParticipants.split(",").firstOrNull() ?: ""
+            } ?: (contact.groupParticipants.split(",").firstOrNull() ?: "")
+    }
+    val isGroupAdmin = groupCreator.isEmpty() || groupCreator == myNumber
+    
     var hasError by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text("গ্রুপ সেটিংস ও সদস্য পরিবর্তন", fontWeight = FontWeight.Bold, color = WhatsAppTealVal)
+            Text(
+                text = if (isGroupAdmin) "গ্রুপ সেটিংস ও সদস্য পরিবর্তন" else "গ্রুপের বিবরণ ও সদস্যবৃন্দ", 
+                fontWeight = FontWeight.Bold, 
+                color = WhatsAppTealVal
+            )
         },
         text = {
             Column(modifier = Modifier.fillMaxWidth()) {
                 OutlinedTextField(
                     value = groupName,
                     onValueChange = {
-                        groupName = it
-                        hasError = false
+                        if (isGroupAdmin) {
+                            groupName = it
+                            hasError = false
+                        }
                     },
                     label = { Text("গ্রুপের নাম") },
                     singleLine = true,
+                    enabled = isGroupAdmin,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = Color.White,
                         unfocusedTextColor = Color.White,
                         focusedLabelColor = WhatsAppTealVal,
-                        unfocusedLabelColor = Color.Gray
+                        unfocusedLabelColor = Color.Gray,
+                        disabledTextColor = Color.White,
+                        disabledLabelColor = Color.LightGray
                     ),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -4148,7 +4166,7 @@ fun ManageGroupDialog(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable {
+                                .clickable(enabled = isGroupAdmin) {
                                     if (isChecked) {
                                         if (c.phone != myNumber) {
                                             selectedParticipantPhones.remove(c.phone)
@@ -4162,24 +4180,34 @@ fun ManageGroupDialog(
                             Checkbox(
                                 checked = isChecked,
                                 onCheckedChange = { checked ->
-                                    if (checked == true) {
-                                        selectedParticipantPhones.add(c.phone)
-                                    } else {
-                                        if (c.phone != myNumber) {
-                                            selectedParticipantPhones.remove(c.phone)
+                                    if (isGroupAdmin) {
+                                        if (checked == true) {
+                                            selectedParticipantPhones.add(c.phone)
+                                        } else {
+                                            if (c.phone != myNumber) {
+                                                selectedParticipantPhones.remove(c.phone)
+                                            }
                                         }
                                     }
                                 },
-                                enabled = c.phone != myNumber
+                                enabled = isGroupAdmin && c.phone != myNumber
                             )
                             AvatarView(name = c.name, base64 = c.profilePicUri, size = 32)
                             Spacer(modifier = Modifier.width(8.dp))
                             Column {
                                 Text(c.name, color = Color.White, fontSize = 14.sp)
-                                if (c.phone == myNumber) {
-                                    Text("আপনি (Admin)", color = WhatsAppGreenVal, fontSize = 11.sp)
-                                } else {
-                                    Text(c.phone, color = Color.Gray, fontSize = 11.sp)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    val isUserMe = c.phone == myNumber
+                                    val isUserCreator = c.phone == groupCreator
+                                    if (isUserMe && isUserCreator) {
+                                        Text("আপনি (গ্রুপ এডমিন 👑)", color = WhatsAppGreenVal, fontSize = 11.sp)
+                                    } else if (isUserCreator) {
+                                        Text("গ্রুপ এডমিন 👑", color = WhatsAppTealVal, fontSize = 11.sp)
+                                    } else if (isUserMe) {
+                                        Text("আপনি", color = Color.Gray, fontSize = 11.sp)
+                                    } else {
+                                        Text(c.phone, color = Color.Gray, fontSize = 11.sp)
+                                    }
                                 }
                             }
                         }
@@ -4188,18 +4216,28 @@ fun ManageGroupDialog(
             }
         },
         confirmButton = {
-            Button(
-                onClick = {
-                    if (groupName.trim().isEmpty()) {
-                        hasError = true
-                    } else {
-                        viewModel.updateGroup(contact.phone, groupName, selectedParticipantPhones.toList())
-                        onDismiss()
-                    }
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = WhatsAppGreenVal)
-            ) {
-                Text("পরিবর্তন সেভ করুন", color = Color.White)
+            if (isGroupAdmin) {
+                Button(
+                    onClick = {
+                        if (groupName.trim().isEmpty()) {
+                            hasError = true
+                        } else {
+                            viewModel.updateGroup(contact.phone, groupName, selectedParticipantPhones.toList())
+                            onDismiss()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = WhatsAppGreenVal)
+                ) {
+                    Text("পরিবর্তন সেভ করুন", color = Color.White)
+                }
+            } else {
+                Text(
+                    text = "⚠️ আপনি এই গ্রুপের এডমিন নন (Read-only)",
+                    color = Color(0xFFFFB300),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                )
             }
         },
         dismissButton = {

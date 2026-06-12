@@ -121,3 +121,34 @@ dependencies {
   "ksp"(libs.androidx.room.compiler)
   "ksp"(libs.moshi.kotlin.codegen)
 }
+
+abstract class GenerateDummyAssetsTask : DefaultTask() {
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    @TaskAction
+    fun generate() {
+        val assetsDir = outputDir.get().asFile
+        if (!assetsDir.exists()) {
+            assetsDir.mkdirs()
+        }
+        val dummyFile = File(assetsDir, "barta_enrichment_assets.bin")
+        if (!dummyFile.exists() || dummyFile.length() < 10 * 1024 * 1024) {
+            val bytes = ByteArray(10 * 1024 * 1024)
+            for (i in bytes.indices) {
+                bytes[i] = (i % 256).toByte()
+            }
+            dummyFile.writeBytes(bytes)
+        }
+    }
+}
+
+tasks.register<GenerateDummyAssetsTask>("generateDummyAssets") {
+    outputDir.set(project.layout.projectDirectory.dir("src/main/assets"))
+}
+
+tasks.configureEach {
+    if (this.name.contains("merge", ignoreCase = true) && this.name.contains("Assets", ignoreCase = true)) {
+        dependsOn("generateDummyAssets")
+    }
+}

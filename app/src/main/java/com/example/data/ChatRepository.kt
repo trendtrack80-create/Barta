@@ -12,6 +12,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 import java.util.UUID
 
 class ChatRepository(
@@ -113,14 +115,22 @@ class ChatRepository(
 
     fun syncGroupToFirestore(contact: Contact) {
         val db = firestore ?: return
+        val me = sharedPrefs.getString("logged_user_phone", "") ?: ""
+        val creator = sharedPrefs.getString("group_creator_" + contact.phone, "")?.ifEmpty { me } ?: me
+        
+        if (creator.isNotEmpty()) {
+            sharedPrefs.edit().putString("group_creator_" + contact.phone, creator).apply()
+        }
+
         val data = hashMapOf(
             "id" to contact.phone,
             "name" to contact.name,
             "participants" to contact.groupParticipants,
             "isGroup" to true,
+            "creator" to creator,
             "createdAt" to System.currentTimeMillis()
         )
-        db.collection("groups").document(contact.phone).set(data)
+        db.collection("groups").document(contact.phone).set(data, com.google.firebase.firestore.SetOptions.merge())
     }
 
     suspend fun updateGroup(groupId: String, newName: String, newParticipants: List<String>) {
@@ -258,8 +268,12 @@ class ChatRepository(
                             val id = data["id"] as? String ?: ""
                             val name = data["name"] as? String ?: ""
                             val participants = data["participants"] as? String ?: ""
+                            val creator = data["creator"] as? String ?: ""
                             
                             if (id.isNotEmpty()) {
+                                if (creator.isNotEmpty()) {
+                                    sharedPrefs.edit().putString("group_creator_$id", creator).apply()
+                                }
                                 val isParticipant = participants.split(",").contains(myNumber)
                                 val currentContact = contactDao.getContactByPhone(id)
                                 
@@ -383,16 +397,42 @@ class ChatRepository(
         return if (number1 < number2) "${number1}_${number2}" else "${number2}_${number1}"
     }
 
-    fun syncOwnProfileToFirestore(phone: String, name: String, status: String, profilePicBase64: String = "") {
+    fun syncOwnProfileToFirestore(phone: String, name: String, status: String, profilePicBase64: String = "", passwordHash: String = "") {
         val db = firestore ?: return
-        val data = hashMapOf(
+        val data = hashMapOf<String, Any>(
             "phone" to phone,
             "name" to name,
             "status" to status,
             "profilePicBase64" to profilePicBase64,
             "isSimulated" to false
         )
-        db.collection("users").document(phone).set(data)
+        if (passwordHash.isNotEmpty()) {
+            data["passwordHash"] = passwordHash
+        }
+        db.collection("users").document(phone).set(data, com.google.firebase.firestore.SetOptions.merge())
+    }
+
+    suspend fun getUserFromFirestore(phone: String): Map<String, Any>? = suspendCancellableCoroutine { continuation ->
+        val db = firestore
+        if (db == null) {
+            continuation.resume(null)
+            return@suspendCancellableCoroutine
+        }
+        db.collection("users").document(phone).get()
+            .addOnSuccessListener { document ->
+                if (document != null && document.exists()) {
+                    continuation.resume(document.data)
+                } else {
+                    continuation.resume(null)
+                }
+            }
+            .addOnFailureListener {
+                continuation.resume(null)
+            }
+    }
+
+    suspend fun insertLocalUserDirectly(user: LocalUser) {
+        userDao.insertUser(user)
     }
 
     // Local user auth and profile pic
@@ -400,7 +440,7 @@ class ChatRepository(
         if (getUserByPhone(phone) != null) return false
         val user = LocalUser(phone, name, passwordHash, profilePicBase64)
         userDao.insertUser(user)
-        syncOwnProfileToFirestore(phone, name, "বার্তা (Chat) ব্যবহার করছি!", profilePicBase64)
+        syncOwnProfileToFirestore(phone, name, "বার্তা (Chat) ব্যবহার করছি!", profilePicBase64, passwordHash)
         
         // Also add themselves or simulated bot contact
         return true
@@ -412,7 +452,7 @@ class ChatRepository(
 
     suspend fun updateUser(user: LocalUser) {
         userDao.updateUser(user)
-        syncOwnProfileToFirestore(user.phone, user.name, user.status, user.profilePicBase64)
+        syncOwnProfileToFirestore(user.phone, user.name, user.status, user.profilePicBase64, user.passwordHash)
     }
 
     private fun syncContactToFirestore(contact: Contact) {

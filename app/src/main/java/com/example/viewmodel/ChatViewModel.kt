@@ -191,24 +191,51 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         viewModelScope.launch {
-            val user = repository.getUserByPhone(cleanPhone)
+            var user = repository.getUserByPhone(cleanPhone)
             if (user == null) {
-                callback("এই নাম্বার দিয়ে কোনো অ্যাকাউন্ট পাওয়া যায়নি! রেজিস্ট্রেশন করুন।")
-            } else if (user.passwordHash != cleanPass) {
-                callback("ভুল পাসওয়ার্ড! দয়া করে সঠিক পাসওয়ার্ড দিন।")
-            } else {
-                sharedPrefs.edit()
-                    .putString("logged_user_phone", cleanPhone)
-                    .putString("logged_user_display_name", user.name)
-                    .putString("logged_user_profile_pic", user.profilePicBase64)
-                    .putString("logged_user_status_message", user.status)
-                    .apply()
-                _myNumber.value = cleanPhone
-                userDisplayName.value = user.name
-                userProfilePicBase64.value = user.profilePicBase64
-                userStatusMessage.value = user.status
-                seedDummyContacts()
-                callback(null)
+                // If not found in local DB, fetch from Firestore to see if they registered previously
+                val firestoreUser = repository.getUserFromFirestore(cleanPhone)
+                if (firestoreUser != null) {
+                    val fsPassword = firestoreUser["passwordHash"] as? String ?: ""
+                    if (fsPassword.isNotEmpty() && fsPassword == cleanPass) {
+                        val name = firestoreUser["name"] as? String ?: "ব্যবহারকারী"
+                        val status = firestoreUser["status"] as? String ?: "বার্তা (Chat) ব্যবহার করছি!"
+                        val pic = firestoreUser["profilePicBase64"] as? String ?: ""
+                        
+                        val newUser = com.example.data.LocalUser(cleanPhone, name, cleanPass, pic, status)
+                        repository.insertLocalUserDirectly(newUser)
+                        user = newUser
+                    } else if (fsPassword.isNotEmpty() && fsPassword != cleanPass) {
+                        callback("ভুল পাসওয়ার্ড! দয়া করে সঠিক পাসওয়ার্ড দিন।")
+                        return@launch
+                    } else {
+                        // Document exists but no passwordHash saved (legacy user). Let's allow creating local user check or show specific msg
+                        callback("এই নাম্বার দিয়ে কোনো সম্পূর্ণ অ্যাকাউন্ট পাওয়া যায়নি বা পাসওয়ার্ড মেলেনি।")
+                        return@launch
+                    }
+                } else {
+                    callback("এই নাম্বার দিয়ে কোনো অ্যাকাউন্ট পাওয়া যায়নি! রেজিস্ট্রেশন করুন।")
+                    return@launch
+                }
+            }
+
+            if (user != null) {
+                if (user.passwordHash != cleanPass) {
+                    callback("ভুল পাসওয়ার্ড! দয়া করে সঠিক পাসওয়ার্ড দিন।")
+                } else {
+                    sharedPrefs.edit()
+                        .putString("logged_user_phone", cleanPhone)
+                        .putString("logged_user_display_name", user.name)
+                        .putString("logged_user_profile_pic", user.profilePicBase64)
+                        .putString("logged_user_status_message", user.status)
+                        .apply()
+                    _myNumber.value = cleanPhone
+                    userDisplayName.value = user.name
+                    userProfilePicBase64.value = user.profilePicBase64
+                    userStatusMessage.value = user.status
+                    seedDummyContacts()
+                    callback(null)
+                }
             }
         }
     }
@@ -308,7 +335,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             val groupId = "group_" + java.util.UUID.randomUUID().toString().take(6)
-            val participantPhones = (participants.map { it.phone } + me).joinToString(",")
+            sharedPrefs.edit().putString("group_creator_$groupId", me).apply()
+            val participantPhones = (listOf(me) + participants.map { it.phone }).distinct().joinToString(",")
             val newGroupContact = Contact(
                 phone = groupId,
                 name = cleanName,
