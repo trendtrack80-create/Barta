@@ -2,8 +2,14 @@ package com.example.ui.screens
 
 import android.Manifest
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.animation.core.animateDpAsState
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.Image
@@ -66,16 +72,27 @@ fun MainAppScreen(
     viewModel: ChatViewModel,
     modifier: Modifier = Modifier
 ) {
+    val isConnected by rememberConnectivityState()
     val loggedInNumber by viewModel.myNumber.collectAsStateWithLifecycle()
     val activeChatContact by viewModel.activeContact.collectAsStateWithLifecycle()
+    val showOnboarding by viewModel.showOnboarding.collectAsStateWithLifecycle()
 
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        if (loggedInNumber == null) {
+        if (!isConnected) {
+            OfflineBlockerScreen()
+        } else if (loggedInNumber == null) {
             AuthScreen(viewModel = viewModel)
+        } else if (showOnboarding) {
+            GreetingOnboardingScreen(
+                viewModel = viewModel,
+                onFinished = {
+                    viewModel.showOnboarding.value = false
+                }
+            )
         } else {
             Scaffold(
                 bottomBar = {
@@ -138,6 +155,525 @@ fun MainAppScreen(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun rememberConnectivityState(): State<Boolean> {
+    val context = LocalContext.current
+    val connectivityManager = remember {
+        context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    }
+    
+    val currentConnected = remember {
+        val activeNetwork = connectivityManager.activeNetwork
+        val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork)
+        mutableStateOf(capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true)
+    }
+
+    DisposableEffect(connectivityManager) {
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                currentConnected.value = true
+            }
+
+            override fun onLost(network: Network) {
+                currentConnected.value = false
+            }
+
+            override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
+                val hasInternet = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                currentConnected.value = hasInternet
+            }
+        }
+
+        val request = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .build()
+        
+        try {
+            connectivityManager.registerNetworkCallback(request, callback)
+        } catch (e: Exception) {
+            currentConnected.value = true
+        }
+
+        onDispose {
+            try {
+                connectivityManager.unregisterNetworkCallback(callback)
+            } catch (e: Exception) {
+                // Ignore
+            }
+        }
+    }
+    return currentConnected
+}
+
+@Composable
+fun OfflineBlockerScreen() {
+    val context = LocalContext.current
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFFF4F6F6))
+            .padding(24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(130.dp)
+                    .background(Color(0xFFE53935).copy(alpha = 0.08f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(100.dp)
+                        .background(Color(0xFFE53935).copy(alpha = 0.15f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = "No Internet Connection Icon",
+                        tint = Color(0xFFE53935),
+                        modifier = Modifier.size(48.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            Text(
+                text = "ইন্টারনেট সংযোগ নেই 📶❌",
+                fontWeight = FontWeight.Bold,
+                fontSize = 22.sp,
+                color = Color(0xFF1F2937),
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            Text(
+                text = "বার্তা (Barta) চ্যাট উপভোগ করার জন্য আপনার সক্রিয় ইন্টারনেট সংযোগ প্রয়োজন। অনুগ্রহ করে আপনার মোবাইল ডেটা (Mobile Data) অথবা ওয়াই-ফাই (Wi-Fi) চালূ করে পুনরায় চেষ্টা করুন।",
+                fontSize = 15.sp,
+                color = Color(0xFF4B5563),
+                textAlign = TextAlign.Center,
+                lineHeight = 22.sp,
+                modifier = Modifier.padding(horizontal = 12.dp)
+            )
+
+            Spacer(modifier = Modifier.height(36.dp))
+
+            Button(
+                onClick = {
+                    val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+                    val activeNetwork = connectivityManager.activeNetwork
+                    val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork)
+                    val isConnectedNow = capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+                    if (isConnectedNow) {
+                        Toast.makeText(context, "ইন্টারনেট কানেকশন সংযুক্ত হয়েছে! 🎉", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(context, "এখনও ইন্টারনেট সংযোগ পাওয়া যায়নি! অনুগ্রহ করে চেষ্টা করুন।", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = WhatsAppTealVal),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .height(49.dp)
+                    .widthIn(min = 180.dp)
+                    .testTag("connectivity_retry_btn")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = "Retry Connection Icon",
+                    tint = Color.White
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "পুনরায় চেষ্টা করুন",
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    fontSize = 15.sp
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun GreetingOnboardingScreen(
+    viewModel: ChatViewModel,
+    onFinished: () -> Unit
+) {
+    var currentPage by remember { mutableIntStateOf(0) }
+    val totalPages = 3
+
+    BackHandler {
+        if (currentPage > 0) {
+            currentPage--
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFFF4F6F6))
+    ) {
+        // Decorative background top glow
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(280.dp)
+                .background(
+                    brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                        colors = listOf(WhatsAppTealVal.copy(alpha = 0.12f), Color.Transparent)
+                    )
+                )
+        )
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp)
+                .statusBarsPadding()
+                .navigationBarsPadding(),
+            verticalArrangement = Arrangement.SpaceBetween,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // Header Top Brand
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 16.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .background(WhatsAppTealVal, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Chat,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = "বার্তা (Barta)",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp,
+                    color = WhatsAppTealVal
+                )
+            }
+
+            // Slide content box with simple horizontal transition based on currentPage
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                AnimatedContent(
+                    targetState = currentPage,
+                    transitionSpec = {
+                        if (targetState > initialState) {
+                            (slideInHorizontally { width -> width } + fadeIn()).togetherWith(
+                                slideOutHorizontally { width -> -width } + fadeOut()
+                            )
+                        } else {
+                            (slideInHorizontally { width -> -width } + fadeIn()).togetherWith(
+                                slideOutHorizontally { width -> width } + fadeOut()
+                            )
+                        }.using(
+                            SizeTransform(clip = false)
+                        )
+                    },
+                    label = "slidePageTransition"
+                ) { page ->
+                    when (page) {
+                        0 -> OnboardingWelcomePage()
+                        1 -> OnboardingFeaturesPage()
+                        2 -> OnboardingHighlightsPage()
+                    }
+                }
+            }
+
+            // Bottom controls: Indicators and Action buttons
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                // Dot Indicators
+                Row(
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(bottom = 24.dp)
+                ) {
+                    for (i in 0 until totalPages) {
+                        val isActive = i == currentPage
+                        val widthAnim by animateDpAsState(
+                            targetValue = if (isActive) 24.dp else 8.dp,
+                            label = "dotWidth"
+                        )
+                        Box(
+                            modifier = Modifier
+                                .padding(horizontal = 4.dp)
+                                .size(height = 8.dp, width = widthAnim)
+                                .background(
+                                    color = if (isActive) WhatsAppTealVal else Color.LightGray,
+                                    shape = CircleShape
+                                )
+                        )
+                    }
+                }
+
+                // Row for Buttons
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Back button (Invisible or disabled on Page 0 to keep spacing)
+                    if (currentPage > 0) {
+                        TextButton(
+                            onClick = { currentPage-- },
+                            modifier = Modifier.testTag("onboarding_back_btn")
+                        ) {
+                            Text(
+                                text = "পূর্ববর্তী",
+                                color = WhatsAppTealVal,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp
+                            )
+                        }
+                    } else {
+                        Spacer(modifier = Modifier.width(80.dp))
+                    }
+
+                    // Next button or Get Started
+                    Button(
+                        onClick = {
+                            if (currentPage < totalPages - 1) {
+                                currentPage++
+                            } else {
+                                onFinished()
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = WhatsAppTealVal),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .height(50.dp)
+                            .testTag("onboarding_next_btn")
+                    ) {
+                        val buttonText = if (currentPage == totalPages - 1) {
+                            "চ্যাট শুরু করুন 🚀"
+                        } else {
+                            "পরবর্তী"
+                        }
+                        Text(
+                            text = buttonText,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            fontSize = 15.sp,
+                            modifier = Modifier.padding(horizontal = 8.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun OnboardingWelcomePage() {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+    ) {
+        // Decorative Illustration Avatar
+        Box(
+            modifier = Modifier
+                .size(150.dp)
+                .background(WhatsAppTealVal.copy(alpha = 0.08f), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(110.dp)
+                    .background(WhatsAppTealVal.copy(alpha = 0.15f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "🇧🇩",
+                    fontSize = 52.sp
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(28.dp))
+
+        Text(
+            text = "বার্তা (Barta) চ্যাটে স্বাগতম! 🎉",
+            fontWeight = FontWeight.Bold,
+            fontSize = 23.sp,
+            color = Color(0xFF1F2937),
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        Text(
+            text = "সহজ, নিরাপদ ও বিজ্ঞাপনহীন যোগাযোগের একমাত্র নির্ভরযোগ্য চ্যাট অ্যাপ্লিকেশন। কোনো বাড়তি জটিলতা বা ঝামেলা ছাড়াই আপনার বন্ধুদের সাথে সর্বদা সংযুক্ত থাকুন।",
+            fontSize = 15.sp,
+            color = Color(0xFF4B5563),
+            textAlign = TextAlign.Center,
+            lineHeight = 22.sp
+        )
+    }
+}
+
+@Composable
+fun OnboardingFeaturesPage() {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Top,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp)
+    ) {
+        Text(
+            text = "আমাদের চমৎকার সুবিধাসমূহ ✨",
+            fontWeight = FontWeight.Bold,
+            fontSize = 20.sp,
+            color = Color(0xFF1F2937),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(bottom = 16.dp)
+        )
+
+        Column(
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            OnboardingFeatureCard(
+                icon = "⚡",
+                title = "রিয়েল-টাইম চ্যাট ও গ্রুপ",
+                description = "অতি দ্রুত চ্যাট মেসেজ এবং ক্লাস বা প্রজেক্টের আলোচনার জন্য তাৎক্ষণিক গ্রুপ খোলার চমৎকার সুবিধা।"
+            )
+
+            OnboardingFeatureCard(
+                icon = "📷",
+                title = "ছবি ও ২৪ ঘণ্টার চমৎকার স্ট্যাটাস",
+                description = "মনের গোপন কথা লিখে স্টোরি ও ছবি বা পছন্দের রঙিন ব্যাকগ্রাউন্ড ডিজাইনে স্ট্যাটাস শেয়ার করুন।"
+            )
+
+            OnboardingFeatureCard(
+                icon = "🪄",
+                title = "মেসেজ এডিট ও ডিলিট ক্ষমতা",
+                description = "মেসেজ ভুল হলে তা সরাসরি সংশোধনের সুযোগ অথবা সবার জন্য সম্পূর্ণ মুছে ফেলার (Delete for Everyone) অফুরন্ত স্বাধীনতা।"
+            )
+        }
+    }
+}
+
+@Composable
+fun OnboardingHighlightsPage() {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Top,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp)
+    ) {
+        Text(
+            text = "স্মার্ট প্রযুক্তি ও সম্পূর্ণ নিয়ন্ত্রণ 🛡️",
+            fontWeight = FontWeight.Bold,
+            fontSize = 20.sp,
+            color = Color(0xFF1F2937),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(bottom = 16.dp)
+        )
+
+        Column(
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            OnboardingFeatureCard(
+                icon = "🤖",
+                title = "স্মার্ট বার্তা সহকারী (AI Bot)",
+                description = "যেকোনো কঠিন প্রশ্নের উত্তর জানতে বা প্রজেক্ট সাজাতে সাহায্য বা সাধারণ চ্যাট করতে সর্বদা প্রস্তুত আপনার এআই বন্ধু!"
+            )
+
+            OnboardingFeatureCard(
+                icon = "🟢",
+                title = "অনলাইন স্ট্যাটাস ও টাইপ অনুভূতি",
+                description = "বন্ধুরা কখন লাইনে আছে বা কি লিখছে তা সরাসরি দেখার চমৎকার অনুভূতি।"
+            )
+
+            OnboardingFeatureCard(
+                icon = "🔒",
+                title = "১০০% বিজ্ঞাপনহীন ও সর্বোচ্চ নিরাপত্তা",
+                description = "কোনো বিরক্তিকর বিজ্ঞাপন ছাড়াই চ্যাটিংয়ের পূর্ণ স্বাচ্ছন্দ্যতা ও ব্যবহারকারীর ডেটার সুরক্ষিত নিরাপত্তা।"
+            )
+        }
+    }
+}
+
+@Composable
+fun OnboardingFeatureCard(
+    icon: String,
+    title: String,
+    description: String
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.5.dp),
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.Top
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(WhatsAppTealVal.copy(alpha = 0.08f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(text = icon, fontSize = 18.sp)
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    color = Color(0xFF111827)
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = description,
+                    fontSize = 12.sp,
+                    color = Color(0xFF6B7280),
+                    lineHeight = 16.sp
+                )
             }
         }
     }

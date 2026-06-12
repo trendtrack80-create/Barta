@@ -45,6 +45,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val _activeContact = MutableStateFlow<Contact?>(null)
     val activeContact: StateFlow<Contact?> = _activeContact.asStateFlow()
 
+    val showOnboarding = MutableStateFlow(false)
+
     @OptIn(ExperimentalCoroutinesApi::class)
     val activeMessages: StateFlow<List<Message>> = _activeContact.flatMapLatest { contact ->
         val me = _myNumber.value
@@ -166,6 +168,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     userProfilePicBase64.value = profilePic
                     userStatusMessage.value = "বার্তা (Chat) ব্যবহার করছি!"
                     seedDummyContacts()
+                    showOnboarding.value = true
                     callback(null)
                 } else {
                     callback("রেজিস্ট্রেশন ব্যর্থ হয়েছে।")
