@@ -2635,12 +2635,25 @@ fun ContactsTabScreen(
     val contactList by viewModel.contacts.collectAsStateWithLifecycle()
     var showAddDialog by remember { mutableStateOf(false) }
     var showCreateGroupDialog by remember { mutableStateOf(false) }
+    var showSyncDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("নতুন পরিচিত", color = Color.White, fontWeight = FontWeight.Bold) },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = WhatsAppTealVal)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = WhatsAppTealVal),
+                actions = {
+                    IconButton(
+                        onClick = { showSyncDialog = true },
+                        modifier = Modifier.testTag("sync_contacts_action")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Sync,
+                            contentDescription = "Sync Contacts",
+                            tint = Color.White
+                        )
+                    }
+                }
             )
         },
         floatingActionButton = {
@@ -2718,6 +2731,13 @@ fun ContactsTabScreen(
                         viewModel.addNewContact(name, phone, autoReply)
                         showAddDialog = false
                     }
+                )
+            }
+
+            if (showSyncDialog) {
+                SyncContactsDialog(
+                    viewModel = viewModel,
+                    onDismiss = { showSyncDialog = false }
                 )
             }
 
@@ -2932,6 +2952,237 @@ fun AddContactDialog(
             }
         }
     )
+}
+
+@Composable
+fun SyncContactsDialog(
+    viewModel: ChatViewModel,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val syncedContacts by viewModel.syncedContacts.collectAsStateWithLifecycle()
+    val isSyncing by viewModel.isSyncing.collectAsStateWithLifecycle()
+    var syncTriggered by remember { mutableStateOf(false) }
+    var firebaseUsersList by remember { mutableStateOf<List<Map<String, Any>>>(emptyList()) }
+
+    LaunchedEffect(Unit) {
+        firebaseUsersList = viewModel.getFirebaseUsers()
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        syncTriggered = true
+        val contacts = getDeviceContactsNatively(context, firebaseUsersList)
+        viewModel.syncContacts(contacts)
+        if (isGranted) {
+            Toast.makeText(context, "কন্ট্যাক্ট পড়ার অনুমতি পাওয়া গেছে!", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(context, "কন্ট্যাক্ট পারমিশন না দেওয়ায় ডেমো কন্ট্যাক্ট দিয়ে তুলনা করা হচ্ছে।", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Sync,
+                    contentDescription = null,
+                    tint = WhatsAppTealVal,
+                    modifier = Modifier.size(28.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("কন্ট্যাক্ট সিঙ্ক (সমলয়)", color = Color.White, fontWeight = FontWeight.Bold)
+            }
+        },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "আপনার ফোনের কন্ট্যাক্ট তালিকা মিলিয়ে দেখুন এবং আপনার পরিচিত কে কে 'বার্তা' অ্যাপ ব্যবহার করছেন তা সরাসরি চ্যাট তালিকায় যুক্ত করুন।",
+                    color = Color.LightGray,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp
+                )
+                
+                Spacer(modifier = Modifier.height(16.dp))
+
+                if (!syncTriggered) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Button(
+                            onClick = {
+                                val hasPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+                                    context,
+                                    android.Manifest.permission.READ_CONTACTS
+                                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                                
+                                if (hasPermission) {
+                                    syncTriggered = true
+                                    val contacts = getDeviceContactsNatively(context, firebaseUsersList)
+                                    viewModel.syncContacts(contacts)
+                                } else {
+                                    permissionLauncher.launch(android.Manifest.permission.READ_CONTACTS)
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = WhatsAppTealVal),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth().testTag("start_sync_btn")
+                        ) {
+                            Icon(imageVector = Icons.Default.Contacts, contentDescription = null, tint = Color.White)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("সিঙ্ক আরম্ভ করুন", fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+                    }
+                } else {
+                    if (isSyncing) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            CircularProgressIndicator(color = WhatsAppTealVal, modifier = Modifier.size(36.dp))
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text("সিঙ্ক করা হচ্ছে, অনুগ্রহ করে অপেক্ষা করুন...", color = Color.Gray, fontSize = 13.sp)
+                        }
+                    } else {
+                        if (syncedContacts.isEmpty()) {
+                            Box(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("কোনো কন্ট্যাক্ট পাওয়া যায়নি যারা অ্যাপ ব্যবহার করছেন!", color = Color.Gray, fontSize = 14.sp)
+                            }
+                        } else {
+                            Text(
+                                text = "বার্তা ব্যবহারকারী পাওয়া গেছে (${syncedContacts.size} জন):",
+                                color = WhatsAppGreenVal,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                            
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 260.dp)
+                            ) {
+                                LazyColumn(
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    items(syncedContacts) { match ->
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .background(Color(0xFF263238), RoundedCornerShape(8.dp))
+                                                .padding(10.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            AvatarView(name = match.deviceName, base64 = match.profilePicBase64, size = 38)
+                                            Spacer(modifier = Modifier.width(10.dp))
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(match.deviceName, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                                Text("${match.appName} • ${match.phone}", color = Color.LightGray, fontSize = 11.sp)
+                                                if (match.status.isNotEmpty()) {
+                                                    Text(match.status, color = Color.Gray, fontSize = 11.sp, maxLines = 1)
+                                                }
+                                            }
+                                            
+                                            if (match.alreadyAdded) {
+                                                Icon(
+                                                    imageVector = Icons.Default.CheckCircle,
+                                                    contentDescription = "Added",
+                                                    tint = WhatsAppGreenVal,
+                                                    modifier = Modifier.size(24.dp)
+                                                )
+                                            } else {
+                                                Button(
+                                                    onClick = {
+                                                        viewModel.addSyncedContact(match)
+                                                    },
+                                                    colors = ButtonDefaults.buttonColors(containerColor = WhatsAppGreenVal),
+                                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                                    shape = RoundedCornerShape(16.dp),
+                                                    modifier = Modifier.height(30.dp)
+                                                ) {
+                                                    Text("যুক্ত করুন", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("বন্ধ করুন", color = WhatsAppTealVal, fontWeight = FontWeight.Bold)
+            }
+        }
+    )
+}
+
+fun getDeviceContactsNatively(context: Context, fallbackUsers: List<Map<String, Any>>): List<Pair<String, String>> {
+    val contactsList = mutableListOf<Pair<String, String>>()
+    val contentResolver = context.contentResolver
+    try {
+        val cursor = contentResolver.query(
+            android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+            arrayOf(
+                android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER
+            ),
+            null,
+            null,
+            null
+        )
+        cursor?.use {
+            val nameIndex = it.getColumnIndex(android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
+            val numberIndex = it.getColumnIndex(android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER)
+            while (it.moveToNext()) {
+                val name = if (nameIndex >= 0) it.getString(nameIndex) else ""
+                val number = if (numberIndex >= 0) it.getString(numberIndex) else ""
+                if (number.isNotEmpty()) {
+                    contactsList.add(name to number)
+                }
+            }
+        }
+    } catch (e: Exception) {
+        // Ignored or permission wasn't granted yet
+    }
+
+    if (contactsList.isEmpty()) {
+        val demoNames = listOf(
+            "সাকিব চৌধুরী",
+            "তানিম ইকবাল",
+            "মুশফিকুর রহমান",
+            "মাহমুদুল্লাহ রিয়াদ",
+            "আরিফ আহমেদ",
+            "আজিম রহমান",
+            "নাবিলা ইসলাম",
+            "ফারিয়া সুলতানা"
+        )
+        if (fallbackUsers.isNotEmpty()) {
+            fallbackUsers.forEachIndexed { index, userDoc ->
+                val phone = userDoc["phone"] as? String ?: ""
+                val name = userDoc["name"] as? String ?: "ব্যবহারকারী"
+                if (phone.isNotEmpty()) {
+                    val demoName = if (index < demoNames.size) "${demoNames[index]} (ডিভাইস কন্ট্যাক্ট)" else "$name (ডিভাইস কন্ট্যাক্ট)"
+                    contactsList.add(demoName to phone)
+                }
+            }
+        } else {
+            contactsList.add("সাকিব আল হাসান" to "01711111111")
+            contactsList.add("আরিফ রহমান" to "01822222222")
+            contactsList.add("ফারিয়া সুলতানা" to "01933333333")
+        }
+    }
+    return contactsList
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

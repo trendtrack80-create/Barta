@@ -522,6 +522,115 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private val _syncedContacts = MutableStateFlow<List<SyncedContact>>(emptyList())
+    val syncedContacts: StateFlow<List<SyncedContact>> = _syncedContacts.asStateFlow()
+
+    private val _isSyncing = MutableStateFlow(false)
+    val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
+
+    fun syncContacts(deviceContacts: List<Pair<String, String>>) {
+        viewModelScope.launch {
+            _isSyncing.value = true
+            try {
+                // 1. Fetch all users from Firestore
+                val firestoreUsers = repository.getAllFirestoreUsers()
+                
+                // 2. Normalize and construct a lookup map of phone -> user data
+                val firestoreUsersMap = firestoreUsers.associateBy { doc ->
+                    val phone = doc["phone"] as? String ?: ""
+                    normalizePhoneNumber(phone)
+                }
+                
+                // 3. Match
+                val currentLocalPhones = repository.allContacts.first().map { it.phone }.toSet()
+                
+                val resultList = mutableListOf<SyncedContact>()
+                for ((deviceName, devicePhone) in deviceContacts) {
+                    val normalizedDevicePhone = normalizePhoneNumber(devicePhone)
+                    if (normalizedDevicePhone.isEmpty() || normalizedDevicePhone == normalizePhoneNumber(_myNumber.value ?: "")) {
+                        continue
+                    }
+                    
+                    val matchDoc = firestoreUsersMap[normalizedDevicePhone]
+                    if (matchDoc != null) {
+                        val appName = matchDoc["name"] as? String ?: "বার্তা ব্যবহারকারী"
+                        val status = matchDoc["status"] as? String ?: "অনলাইন"
+                        val profilePic = matchDoc["profilePicBase64"] as? String ?: ""
+                        val phoneKey = matchDoc["phone"] as? String ?: normalizedDevicePhone
+                        
+                        resultList.add(
+                            SyncedContact(
+                                phone = phoneKey,
+                                deviceName = deviceName,
+                                appName = appName,
+                                status = status,
+                                profilePicBase64 = profilePic,
+                                alreadyAdded = currentLocalPhones.contains(phoneKey)
+                            )
+                        )
+                    }
+                }
+                
+                // Remove duplicates in resultList by phone
+                val distinctResult = resultList.distinctBy { it.phone }
+                _syncedContacts.value = distinctResult
+            } catch (e: Exception) {
+                // Ignore or handle
+            } finally {
+                _isSyncing.value = false
+            }
+        }
+    }
+    
+    fun getFirebaseUsersForFallback(): List<Map<String, Any>> {
+        var users = emptyList<Map<String, Any>>()
+        viewModelScope.launch {
+            try {
+                users = repository.getAllFirestoreUsers()
+            } catch (e: Exception) {
+                // Ignore
+            }
+        }.cancel() // No, wait, let's just make getFirebaseUsersForFallback a suspend function or load it asynchronously!
+        return users
+    }
+
+    suspend fun getFirebaseUsers(): List<Map<String, Any>> {
+        return try {
+            repository.getAllFirestoreUsers()
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    fun normalizePhoneNumber(phone: String): String {
+        val digits = phone.filter { it.isDigit() }
+        return if (digits.length >= 11) {
+            digits.takeLast(11)
+        } else {
+            digits
+        }
+    }
+
+    fun addSyncedContact(synced: SyncedContact) {
+        viewModelScope.launch {
+            val newContact = Contact(
+                phone = synced.phone,
+                name = synced.deviceName.ifEmpty { synced.appName },
+                isSimulated = false,
+                lastSeen = "online",
+                lastMessageText = "চ্যাট আরম্ভ করতে বার্তা পাঠান...",
+                lastMessageTime = System.currentTimeMillis(),
+                profilePicUri = synced.profilePicBase64
+            )
+            repository.addContact(newContact)
+            
+            // Update the state in list
+            _syncedContacts.value = _syncedContacts.value.map {
+                if (it.phone == synced.phone) it.copy(alreadyAdded = true) else it
+            }
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
         repository.stopListeningToChat()

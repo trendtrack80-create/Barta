@@ -54,3 +54,13 @@ data class ChatStatus(
     val bgColorVal: Long
 )
 
+data class SyncedContact(
+    val phone: String,
+    val deviceName: String,
+    val appName: String,
+    val status: String,
+    val profilePicBase64: String,
+    val alreadyAdded: Boolean
+)
+
+

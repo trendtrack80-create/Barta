@@ -431,6 +431,22 @@ class ChatRepository(
             }
     }
 
+    suspend fun getAllFirestoreUsers(): List<Map<String, Any>> = suspendCancellableCoroutine { continuation ->
+        val db = firestore
+        if (db == null) {
+            continuation.resume(emptyList())
+            return@suspendCancellableCoroutine
+        }
+        db.collection("users").get()
+            .addOnSuccessListener { querySnapshot ->
+                val list = querySnapshot.documents.mapNotNull { it.data }
+                continuation.resume(list)
+            }
+            .addOnFailureListener {
+                continuation.resume(emptyList())
+            }
+    }
+
     suspend fun insertLocalUserDirectly(user: LocalUser) {
         userDao.insertUser(user)
     }
