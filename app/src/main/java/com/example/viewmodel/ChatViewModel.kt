@@ -103,6 +103,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _myNumber.collect { me ->
                 if (me != null) {
+                    repository.updatePresence(me, true)
                     repository.startListeningToGroups(me) {
                         // real-time synchronization callback trigger
                     }
@@ -112,10 +113,14 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     repository.startGlobalChatsListener(me) {
                         // real-time global messaging synchronization callback trigger
                     }
+                    repository.startListeningToUserPresence {
+                        // real-time presence updated callback trigger
+                    }
                 } else {
                     repository.stopListeningToGroups()
                     repository.stopListeningToStatuses()
                     repository.stopAllMessageListeners()
+                    repository.stopListeningToUserPresence()
                 }
             }
         }
@@ -304,6 +309,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun logout() {
+        val me = _myNumber.value
+        if (me != null) {
+            repository.updatePresence(me, false)
+        }
         sharedPrefs.edit()
             .remove("logged_user_phone")
             .remove("logged_user_display_name")
@@ -607,7 +616,15 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     override fun onCleared() {
+        val me = _myNumber.value
+        if (me != null) {
+            repository.updatePresence(me, false)
+        }
         super.onCleared()
         repository.stopListeningToChat()
+        repository.stopListeningToGroups()
+        repository.stopListeningToStatuses()
+        repository.stopAllMessageListeners()
+        repository.stopListeningToUserPresence()
     }
 }

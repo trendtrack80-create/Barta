@@ -20,6 +20,9 @@ interface ContactDao {
     @Query("UPDATE contacts SET lastMessageText = :text, lastMessageTime = :time WHERE phone = :phone")
     suspend fun updateLastMessage(phone: String, text: String, time: Long)
 
+    @Query("UPDATE contacts SET lastSeen = :lastSeen WHERE phone = :phone")
+    suspend fun updateContactPresence(phone: String, lastSeen: String)
+
     @Query("UPDATE contacts SET unreadCount = :count WHERE phone = :phone")
     suspend fun updateUnreadCount(phone: String, count: Int)
 

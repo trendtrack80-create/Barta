@@ -2574,11 +2574,12 @@ fun ChatRowItem(
                     }
                 }
                 
+                val isOnline = contact.lastSeen == "online" || contact.lastSeen == "অনলাইন"
                 Text(
-                    text = if (contact.isGroup) "group" else contact.lastSeen,
-                    color = if (contact.lastSeen == "online") WhatsAppGreenVal else Color.Gray,
+                    text = if (contact.isGroup) "group" else formatLastSeenBengali(contact.lastSeen),
+                    color = if (isOnline) WhatsAppGreenVal else Color.Gray,
                     fontSize = 11.sp,
-                    fontWeight = if (contact.lastSeen == "online") FontWeight.Bold else FontWeight.Normal
+                    fontWeight = if (isOnline) FontWeight.Bold else FontWeight.Normal
                 )
             }
 
@@ -3573,7 +3574,7 @@ fun ChatWindowScreen(
                             )
                         } else {
                             Text(
-                                text = if (contact.typingStatus.isNotEmpty()) contact.typingStatus else contact.lastSeen,
+                                text = if (contact.typingStatus.isNotEmpty()) contact.typingStatus else formatLastSeenBengali(contact.lastSeen),
                                 color = if (contact.typingStatus.isNotEmpty()) WhatsAppGreenVal else Color(0xB3FFFFFF),
                                 fontSize = 11.sp
                             )
@@ -4522,4 +4523,51 @@ fun copyUriToLocalFile(context: Context, uri: android.net.Uri): String? {
         e.printStackTrace()
         null
     }
+}
+
+fun formatLastSeenBengali(lastSeen: String): String {
+    if (lastSeen == "online") return "অনলাইন"
+    if (lastSeen == "offline") return "নিষ্ক্রিয়"
+    
+    val timestamp = lastSeen.toLongOrNull() ?: return lastSeen
+    val now = System.currentTimeMillis()
+    val diff = now - timestamp
+    
+    if (diff < 60000) {
+        return "এইমাত্র সক্রিয়"
+    } else if (diff < 3600000) {
+        val mins = diff / 60000
+        val minsBn = toBengaliDigits(mins.toString())
+        return "$minsBn মিনিট আগে সক্রিয়"
+    }
+    
+    val sdf = java.text.SimpleDateFormat("hh:mm a", java.util.Locale.US)
+    val timeStr = sdf.format(java.util.Date(timestamp))
+    
+    var formattedTime = timeStr
+        .replace("AM", "পূর্বাহ্ণ")
+        .replace("PM", "অপরাহ্ণ")
+    
+    formattedTime = toBengaliDigits(formattedTime)
+    
+    val daySdf = java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.US)
+    val mDateStr = daySdf.format(java.util.Date(timestamp))
+    val todayStr = daySdf.format(java.util.Date(now))
+    val yesterdayStr = daySdf.format(java.util.Date(now - 24 * 60 * 60 * 1000))
+    
+    return when (mDateStr) {
+        todayStr -> "আজ $formattedTime এ সক্রিয়"
+        yesterdayStr -> "গতকাল $formattedTime এ সক্রিয়"
+        else -> "${toBengaliDigits(mDateStr)} তারিখে সক্রিয়"
+    }
+}
+
+fun toBengaliDigits(english: String): String {
+    val englishDigits = charArrayOf('0', '1', '2', '3', '4', '5', '6', '7', '8', '9')
+    val bengaliDigits = charArrayOf('০', '১', '২', '৩', '৪', '৫', '৬', '৭', '৮', '৯')
+    var result = english
+    for (i in 0..9) {
+        result = result.replace(englishDigits[i], bengaliDigits[i])
+    }
+    return result
 }

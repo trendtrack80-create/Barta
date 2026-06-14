@@ -918,4 +918,59 @@ class ChatRepository(
         statusListenerRegistration?.remove()
         statusListenerRegistration = null
     }
+
+    private var usersPresenceListener: ListenerRegistration? = null
+
+    fun updatePresence(phone: String, isOnline: Boolean) {
+        val db = firestore ?: return
+        val lastSeenVal = if (isOnline) "online" else System.currentTimeMillis().toString()
+        val data = hashMapOf<String, Any>(
+            "lastSeen" to lastSeenVal
+        )
+        db.collection("users").document(phone).set(data, com.google.firebase.firestore.SetOptions.merge())
+            .addOnSuccessListener {
+                Log.d("BartaChat", "Sync presence success for $phone: $lastSeenVal")
+            }
+            .addOnFailureListener { e ->
+                Log.e("BartaChat", "Sync presence failed for $phone", e)
+            }
+    }
+
+    fun startListeningToUserPresence(onPresenceUpdated: () -> Unit) {
+        usersPresenceListener?.remove()
+        val db = firestore ?: return
+
+        usersPresenceListener = db.collection("users")
+            .addSnapshotListener { snapshots, error ->
+                if (error != null) {
+                    Log.e("BartaChat", "Firestore users presence listen failed", error)
+                    return@addSnapshotListener
+                }
+
+                if (snapshots != null) {
+                    repositoryScope.launch {
+                        for (doc in snapshots.documentChanges) {
+                            val data = doc.document.data
+                            val phone = data["phone"] as? String ?: doc.document.id
+                            val lastSeenVal = data["lastSeen"] as? String ?: "offline"
+
+                            if (phone.isNotEmpty()) {
+                                val currentContact = contactDao.getContactByPhone(phone)
+                                if (currentContact != null) {
+                                    contactDao.updateContactPresence(phone, lastSeenVal)
+                                }
+                            }
+                        }
+                        withContext(Dispatchers.Main) {
+                            onPresenceUpdated()
+                        }
+                    }
+                }
+            }
+    }
+
+    fun stopListeningToUserPresence() {
+        usersPresenceListener?.remove()
+        usersPresenceListener = null
+    }
 }
