@@ -2735,11 +2735,15 @@ fun ContactsTabScreen(
     var showAddDialog by remember { mutableStateOf(false) }
     var showCreateGroupDialog by remember { mutableStateOf(false) }
     var showSyncDialog by remember { mutableStateOf(false) }
+    val txt = getTranslator(viewModel = viewModel)
+
+    var activeSubTab by remember { mutableStateOf("local") } // "local" or "firestore"
+    var searchQueryText by remember { mutableStateOf("") }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("নতুন পরিচিত", color = Color.White, fontWeight = FontWeight.Bold) },
+                title = { Text(txt("নতুন চ্যাট পরিচিতি", "New Conversation"), color = Color.White, fontWeight = FontWeight.Bold) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = WhatsAppTealVal),
                 actions = {
                     IconButton(
@@ -2756,67 +2760,311 @@ fun ContactsTabScreen(
             )
         },
         floatingActionButton = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                horizontalAlignment = Alignment.End
-            ) {
-                // Group Create FAB
-                ExtendedFloatingActionButton(
-                    onClick = { showCreateGroupDialog = true },
-                    containerColor = WhatsAppTealVal,
-                    contentColor = Color.White,
-                    icon = { Icon(Icons.Default.Groups, contentDescription = "Create Group") },
-                    text = { Text("নতুন গ্রুপ") },
-                    modifier = Modifier.testTag("create_group_fab")
-                )
+            if (activeSubTab == "local") {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalAlignment = Alignment.End
+                ) {
+                    // Group Create FAB
+                    ExtendedFloatingActionButton(
+                        onClick = { showCreateGroupDialog = true },
+                        containerColor = WhatsAppTealVal,
+                        contentColor = Color.White,
+                        icon = { Icon(Icons.Default.Groups, contentDescription = "Create Group") },
+                        text = { Text(txt("নতুন গ্রুপ", "New Group")) },
+                        modifier = Modifier.testTag("create_group_fab")
+                    )
 
-                // Contact Add FAB
+                    // Contact Add FAB
+                    FloatingActionButton(
+                        onClick = { showAddDialog = true },
+                        containerColor = WhatsAppGreenVal,
+                        contentColor = Color.White,
+                        modifier = Modifier.testTag("add_contact_fab")
+                    ) {
+                        Icon(Icons.Default.PersonAdd, contentDescription = "Add Contact")
+                    }
+                }
+            } else {
                 FloatingActionButton(
-                    onClick = { showAddDialog = true },
+                    onClick = { viewModel.fetchFirestoreUsers() },
                     containerColor = WhatsAppGreenVal,
                     contentColor = Color.White,
-                    modifier = Modifier.testTag("add_contact_fab")
+                    modifier = Modifier.testTag("refresh_firestore_users_fab")
                 ) {
-                    Icon(Icons.Default.PersonAdd, contentDescription = "Add Contact")
+                    Icon(Icons.Default.Sync, contentDescription = "Refresh Registered Users")
                 }
             }
         }
     ) { paddingValues ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            if (contactList.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("কোনো কন্ট্যাক্ট নেই। প্লাস চাপুন!", color = Color.Gray)
+            // subTab switcher pills
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .background(Color(0xFF1F2937), shape = RoundedCornerShape(24.dp))
+                    .padding(4.dp),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                // My local contacts option
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(36.dp)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(
+                            if (activeSubTab == "local") WhatsAppTealVal else Color.Transparent
+                        )
+                        .clickable { activeSubTab = "local" }
+                        .testTag("subtab_local"),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = txt("আমার পরিচিতি", "My Contacts"),
+                        color = if (activeSubTab == "local") Color.White else Color.LightGray,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp
+                    )
                 }
-            } else {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(contactList) { contact ->
-                        Row(
+
+                // Firestore Barta registered users option
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(36.dp)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(
+                            if (activeSubTab == "firestore") WhatsAppTealVal else Color.Transparent
+                        )
+                        .clickable { activeSubTab = "firestore" }
+                        .testTag("subtab_firestore"),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = txt("নিবন্ধিত সব ব্যবহারকারী", "Registered Users"),
+                            color = if (activeSubTab == "firestore") Color.White else Color.LightGray,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Box(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onContactClick(contact) }
-                                .padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            if (contact.isGroup) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(44.dp)
-                                        .background(WhatsAppTealVal, shape = CircleShape),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(Icons.Default.Groups, contentDescription = null, tint = Color.White)
-                                }
-                            } else {
-                                AvatarView(name = contact.name, base64 = contact.profilePicUri, size = 44)
+                                .size(6.dp)
+                                .background(Color(0xFF10B981), shape = CircleShape)
+                        )
+                    }
+                }
+            }
+
+            // Standalone localized Search text field
+            OutlinedTextField(
+                value = searchQueryText,
+                onValueChange = { searchQueryText = it },
+                placeholder = {
+                    Text(
+                        text = if (activeSubTab == "local") txt("কন্টাক্ট খুঁজুন...", "Search contacts...") else txt("ব্যবহারকারী খুঁজুন...", "Search registered users..."),
+                        color = Color.LightGray,
+                        fontSize = 14.sp
+                    )
+                },
+                leadingIcon = {
+                    Icon(Icons.Default.Search, contentDescription = "Search Icon", tint = Color.LightGray)
+                },
+                trailingIcon = {
+                    if (searchQueryText.isNotEmpty()) {
+                        IconButton(onClick = { searchQueryText = "" }) {
+                            Icon(Icons.Default.Clear, contentDescription = "Clear", tint = Color.LightGray)
+                        }
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp)
+                    .testTag("contacts_search_input"),
+                shape = RoundedCornerShape(12.dp),
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    focusedBorderColor = WhatsAppTealVal,
+                    unfocusedBorderColor = Color.LightGray.copy(alpha = 0.5f),
+                    focusedContainerColor = Color.White.copy(alpha = 0.05f),
+                    unfocusedContainerColor = Color.White.copy(alpha = 0.02f)
+                )
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Box(
+                modifier = Modifier.weight(1f)
+            ) {
+                if (activeSubTab == "local") {
+                    val filteredContacts = remember(contactList, searchQueryText) {
+                        if (searchQueryText.isBlank()) {
+                            contactList
+                        } else {
+                            contactList.filter {
+                                it.name.contains(searchQueryText, ignoreCase = true) || it.phone.contains(searchQueryText)
                             }
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Column {
-                                Text(contact.name, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.White)
-                                Text(contact.phone, color = Color.LightGray, fontSize = 14.sp)
+                        }
+                    }
+
+                    if (filteredContacts.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(
+                                text = if (searchQueryText.isEmpty()) txt("কোনো পরিচিতি নেই। প্লাস চাপুন!", "No contacts found. Press the add button!") else txt("কোনো মিল পাওয়া যায়নি।", "No matching contacts."),
+                                color = Color.Gray
+                            )
+                        }
+                    } else {
+                        LazyColumn(modifier = Modifier.fillMaxSize()) {
+                            items(filteredContacts) { contact ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onContactClick(contact) }
+                                        .padding(16.dp)
+                                        .testTag("contact_row_${contact.phone}"),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (contact.isGroup) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(44.dp)
+                                                .background(WhatsAppTealVal, shape = CircleShape),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(Icons.Default.Groups, contentDescription = null, tint = Color.White)
+                                        }
+                                    } else {
+                                        AvatarView(name = contact.name, base64 = contact.profilePicUri, size = 44)
+                                    }
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(contact.name, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.White)
+                                        Text(contact.phone, color = Color.LightGray, fontSize = 14.sp)
+                                    }
+                                    if (!contact.isGroup) {
+                                        Icon(
+                                            imageVector = Icons.Default.Chat,
+                                            contentDescription = "Chat",
+                                            tint = WhatsAppTealVal
+                                        )
+                                    }
+                                }
+                                HorizontalDivider(color = Color.Gray.copy(alpha = 0.2f), thickness = 0.5.dp, modifier = Modifier.padding(horizontal = 16.dp))
+                            }
+                        }
+                    }
+                } else {
+                    val myPhone by viewModel.myNumber.collectAsStateWithLifecycle()
+                    val firestoreUsers by viewModel.firestoreUsers.collectAsStateWithLifecycle()
+                    val isFetching by viewModel.isFetchingFirestoreUsers.collectAsStateWithLifecycle()
+
+                    LaunchedEffect(Unit) {
+                        viewModel.fetchFirestoreUsers()
+                    }
+
+                    val filteredFirestoreList = remember(firestoreUsers, myPhone, searchQueryText) {
+                        firestoreUsers
+                            .filter { userMap ->
+                                val uPhone = userMap["phone"] as? String ?: ""
+                                uPhone != myPhone
+                            }
+                            .filter { userMap ->
+                                val uName = userMap["name"] as? String ?: ""
+                                val uPhone = userMap["phone"] as? String ?: ""
+                                searchQueryText.isBlank() || uName.contains(searchQueryText, ignoreCase = true) || uPhone.contains(searchQueryText)
+                            }
+                    }
+
+                    if (isFetching) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                CircularProgressIndicator(color = WhatsAppTealVal)
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text(txt("সার্ভার থেকে ব্যবহারকারী লোড হচ্ছে...", "Loading registered users..."), color = Color.Gray, fontSize = 14.sp)
+                            }
+                        }
+                    } else if (filteredFirestoreList.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.padding(24.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Search,
+                                    contentDescription = "No users",
+                                    tint = Color.LightGray,
+                                    modifier = Modifier.size(56.dp)
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text(
+                                    text = if (searchQueryText.isNotEmpty()) txt("কোনো মিল পাওয়া যায়নি", "No matching users found") else txt("সার্ভারে কোনো ব্যবহারকারী নথিভুক্ত নেই অথবা ডাটাবেজ অফলাইন", "No registered users or database offline"),
+                                    color = Color.Gray,
+                                    textAlign = TextAlign.Center,
+                                    fontSize = 14.sp
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Button(
+                                    onClick = { viewModel.fetchFirestoreUsers() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = WhatsAppTealVal)
+                                ) {
+                                    Text(txt("পুনরায় লোড করুন 🔄", "Reload Users 🔄"))
+                                }
+                            }
+                        }
+                    } else {
+                        LazyColumn(modifier = Modifier.fillMaxSize()) {
+                            items(filteredFirestoreList) { userMap ->
+                                val uPhone = userMap["phone"] as? String ?: ""
+                                val uName = userMap["name"] as? String ?: ""
+                                val uStatus = userMap["status"] as? String ?: txt("বার্তা (Chat) ব্যবহার করছি!", "Using Barta Chat!")
+                                val uPic = userMap["profilePicBase64"] as? String ?: ""
+
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            viewModel.initiateChatWithRegisteredUser(uPhone, uName, uPic) { contact ->
+                                                onContactClick(contact)
+                                            }
+                                        }
+                                        .padding(16.dp)
+                                        .testTag("firestore_row_$uPhone"),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    AvatarView(name = uName, base64 = uPic, size = 44)
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(uName, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.White)
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(uStatus, color = Color.Gray, fontSize = 13.sp, maxLines = 1)
+                                        Text(uPhone, color = Color.LightGray, fontSize = 11.sp)
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .background(WhatsAppTealVal.copy(alpha = 0.15f), shape = RoundedCornerShape(16.dp))
+                                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                                    ) {
+                                        Text(
+                                            text = txt("চ্যাট 💬", "Chat 💬"),
+                                            color = WhatsAppTealVal,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.sp
+                                        )
+                                    }
+                                }
+                                HorizontalDivider(color = Color.Gray.copy(alpha = 0.2f), thickness = 0.5.dp, modifier = Modifier.padding(horizontal = 16.dp))
                             }
                         }
                     }

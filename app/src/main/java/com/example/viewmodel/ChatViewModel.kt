@@ -63,6 +63,25 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     val firebaseAppId = MutableStateFlow("")
     val isFirebaseConfigured = MutableStateFlow(false)
 
+    private val _firestoreUsers = MutableStateFlow<List<Map<String, Any>>>(emptyList())
+    val firestoreUsers: StateFlow<List<Map<String, Any>>> = _firestoreUsers.asStateFlow()
+
+    private val _isFetchingFirestoreUsers = MutableStateFlow(false)
+    val isFetchingFirestoreUsers: StateFlow<Boolean> = _isFetchingFirestoreUsers.asStateFlow()
+
+    fun fetchFirestoreUsers() {
+        viewModelScope.launch {
+            _isFetchingFirestoreUsers.value = true
+            try {
+                _firestoreUsers.value = repository.getAllFirestoreUsers()
+            } catch (e: Exception) {
+                // Ignore
+            } finally {
+                _isFetchingFirestoreUsers.value = false
+            }
+        }
+    }
+
     // Language setting
     val appLanguage = MutableStateFlow(sharedPrefs.getString("app_language", "bn") ?: "bn")
 
@@ -425,6 +444,28 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             return true
         }
         return false
+    }
+
+    fun initiateChatWithRegisteredUser(phone: String, name: String, profilePicBase64: String, onComplete: (Contact) -> Unit) {
+        viewModelScope.launch {
+            val existing = repository.getContact(phone)
+            val contact = if (existing != null) {
+                existing
+            } else {
+                val newContact = Contact(
+                    phone = phone,
+                    name = name,
+                    isSimulated = false,
+                    lastSeen = "online",
+                    lastMessageText = "চ্যাট আরম্ভ করতে বার্তা পাঠান...",
+                    lastMessageTime = System.currentTimeMillis(),
+                    profilePicUri = profilePicBase64
+                )
+                repository.addContact(newContact)
+                newContact
+            }
+            onComplete(contact)
+        }
     }
 
     fun sendMessage(text: String) {
