@@ -10,6 +10,7 @@ import com.google.firebase.firestore.Query
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -25,6 +26,9 @@ class ChatRepository(
 ) {
     private var firestore: FirebaseFirestore? = null
     private var messageListener: ListenerRegistration? = null
+    private val activeMessageListeners = HashMap<String, ListenerRegistration>()
+    private var globalChatsListener: ListenerRegistration? = null
+    private var activeChatPhone: String? = null
     private val repositoryScope = CoroutineScope(Dispatchers.IO)
     private val sharedPrefs = context.getSharedPreferences("BartaChatPrefs", Context.MODE_PRIVATE)
 
@@ -213,15 +217,25 @@ class ChatRepository(
                         Log.e("BartaChat", "Error uploading message to Firestore", e)
                     }
 
+                val chatParticipants = if (receiver.startsWith("group_")) {
+                    val contact = contactDao.getContactByPhone(receiver)
+                    val list = contact?.groupParticipants?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() } ?: listOf(sender, receiver)
+                    (list + sender).distinct()
+                } else {
+                    listOf(sender, receiver)
+                }
+
                 val chatMeta = hashMapOf(
+                    "id" to chatId,
                     "lastMessageText" to (if (mediaType != null) "[${mediaType.replaceFirstChar { it.uppercase() }}]" else text),
                     "lastMessageTime" to timestamp,
                     "lastSender" to sender,
-                    "lastSenderName" to senderName
+                    "lastSenderName" to senderName,
+                    "participants" to chatParticipants
                 )
                 db.collection("chats")
                     .document(chatId)
-                    .set(chatMeta)
+                    .set(chatMeta, com.google.firebase.firestore.SetOptions.merge())
             }
         }
     }
@@ -389,6 +403,180 @@ class ChatRepository(
     fun stopListeningToChat() {
         messageListener?.remove()
         messageListener = null
+    }
+
+    fun setActiveChatPhone(phone: String?) {
+        activeChatPhone = phone
+    }
+
+    @Synchronized
+    fun startListeningToChatMessages(myNumber: String, peerNumber: String, onNewMessage: () -> Unit) {
+        val chatId = getChatId(myNumber, peerNumber)
+        if (activeMessageListeners.containsKey(chatId)) {
+            return
+        }
+
+        val db = firestore ?: return
+        val listener = db.collection("chats")
+            .document(chatId)
+            .collection("messages")
+            .orderBy("timestamp", Query.Direction.ASCENDING)
+            .addSnapshotListener { snapshots, error ->
+                if (snapshots != null) {
+                    repositoryScope.launch {
+                        var hasNew = false
+                        for (doc in snapshots.documentChanges) {
+                            val data = doc.document.data
+                            val id = data["id"] as? String ?: ""
+                            val senderId = data["senderId"] as? String ?: ""
+                            val receiverId = data["receiverId"] as? String ?: ""
+                            val text = data["text"] as? String ?: ""
+                            val timestamp = data["timestamp"] as? Long ?: System.currentTimeMillis()
+                            val isRead = data["isRead"] as? Boolean ?: false
+                            val senderName = data["senderName"] as? String ?: ""
+                            val mediaUrl = data["mediaUrl"] as? String ?: ""
+                            val mediaType = data["mediaType"] as? String ?: ""
+                            val isDeletedForEveryone = data["isDeletedForEveryone"] as? Boolean ?: false
+
+                            if (id.isNotEmpty()) {
+                                val message = Message(
+                                    id = id,
+                                    senderId = senderId,
+                                    receiverId = receiverId,
+                                    text = text,
+                                    timestamp = timestamp,
+                                    isRead = isRead,
+                                    senderName = senderName,
+                                    mediaUrl = mediaUrl.ifEmpty { null },
+                                    mediaType = mediaType.ifEmpty { null },
+                                    isDeletedForEveryone = isDeletedForEveryone
+                                )
+                                messageDao.insertMessage(message)
+
+                                val contactPhone = if (peerNumber.startsWith("group_")) peerNumber else (if (senderId == myNumber) receiverId else senderId)
+                                val lastMsgText = if (isDeletedForEveryone) "ঐ বার্তাটি মুছে ফেলা হয়েছে" else (if (mediaType.isNotEmpty()) "[$mediaType]" else text)
+                                contactDao.updateLastMessage(contactPhone, lastMsgText, timestamp)
+
+                                if (senderId != myNumber) {
+                                    val currentContact = contactDao.getContactByPhone(peerNumber)
+                                    if (currentContact != null && doc.type == com.google.firebase.firestore.DocumentChange.Type.ADDED) {
+                                        hasNew = true
+                                        if (peerNumber != activeChatPhone) {
+                                            contactDao.updateUnreadCount(peerNumber, currentContact.unreadCount + 1)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if (hasNew) {
+                            withContext(Dispatchers.Main) {
+                                onNewMessage()
+                            }
+                        }
+                    }
+                }
+            }
+        activeMessageListeners[chatId] = listener
+    }
+
+    fun startGlobalChatsListener(myNumber: String, onNewChatOrMessage: () -> Unit) {
+        globalChatsListener?.remove()
+        val db = firestore ?: return
+
+        // 1. Instantly start listening to all existing local contacts
+        repositoryScope.launch {
+            val localContacts = contactDao.getAllContacts().firstOrNull() ?: emptyList()
+            for (contact in localContacts) {
+                if (!contact.isSimulated) {
+                    startListeningToChatMessages(myNumber, contact.phone, onNewChatOrMessage)
+                }
+            }
+        }
+
+        // 2. Listen to all Firestore chats metadata of which we are a participant
+        globalChatsListener = db.collection("chats")
+            .whereArrayContains("participants", myNumber)
+            .addSnapshotListener { snapshots, error ->
+                if (error != null) {
+                    Log.e("BartaChat", "Global chats listen failed", error)
+                    return@addSnapshotListener
+                }
+
+                if (snapshots != null) {
+                    repositoryScope.launch {
+                        for (doc in snapshots.documentChanges) {
+                            val data = doc.document.data
+                            val chatId = doc.document.id
+                            val lastMsgText = data["lastMessageText"] as? String ?: ""
+                            val lastMsgTime = data["lastMessageTime"] as? Long ?: System.currentTimeMillis()
+
+                            val peerNumber = if (chatId.startsWith("group_")) {
+                                chatId
+                            } else {
+                                val parts = chatId.split("_")
+                                parts.firstOrNull { it != myNumber } ?: ""
+                            }
+
+                            if (peerNumber.isNotEmpty()) {
+                                val existingContact = contactDao.getContactByPhone(peerNumber)
+                                if (existingContact == null) {
+                                    if (!chatId.startsWith("group_")) {
+                                        db.collection("users").document(peerNumber).get()
+                                            .addOnSuccessListener { userSnapshot ->
+                                                val fName = userSnapshot.getString("name") ?: "বার্তা ব্যবহারকারী"
+                                                val fPic = userSnapshot.getString("profilePicBase64") ?: ""
+                                                repositoryScope.launch {
+                                                    val newContact = Contact(
+                                                        phone = peerNumber,
+                                                        name = fName,
+                                                        isSimulated = false,
+                                                        isGroup = false,
+                                                        lastMessageText = lastMsgText,
+                                                        lastMessageTime = lastMsgTime,
+                                                        profilePicUri = fPic,
+                                                        lastSeen = "online"
+                                                    )
+                                                    contactDao.insertContact(newContact)
+                                                    startListeningToChatMessages(myNumber, peerNumber, onNewChatOrMessage)
+                                                }
+                                            }
+                                            .addOnFailureListener {
+                                                repositoryScope.launch {
+                                                    val newContact = Contact(
+                                                        phone = peerNumber,
+                                                        name = "যোগাযোগ ($peerNumber)",
+                                                        isSimulated = false,
+                                                        isGroup = false,
+                                                        lastMessageText = lastMsgText,
+                                                        lastMessageTime = lastMsgTime,
+                                                        lastSeen = "online"
+                                                    )
+                                                    contactDao.insertContact(newContact)
+                                                    startListeningToChatMessages(myNumber, peerNumber, onNewChatOrMessage)
+                                                }
+                                            }
+                                    } else {
+                                        startListeningToChatMessages(myNumber, peerNumber, onNewChatOrMessage)
+                                    }
+                                } else {
+                                    startListeningToChatMessages(myNumber, peerNumber, onNewChatOrMessage)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+    }
+
+    @Synchronized
+    fun stopAllMessageListeners() {
+        for (listener in activeMessageListeners.values) {
+            listener.remove()
+        }
+        activeMessageListeners.clear()
+
+        globalChatsListener?.remove()
+        globalChatsListener = null
     }
 
     fun getChatId(number1: String, number2: String): String {

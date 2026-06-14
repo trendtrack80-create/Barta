@@ -99,28 +99,39 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
-        // Real-time listener for Firestore groups of which the user is a participant
+        // Real-time listener for Firestore groups, statuses, and global message syncing
         viewModelScope.launch {
             _myNumber.collect { me ->
                 if (me != null) {
                     repository.startListeningToGroups(me) {
                         // real-time synchronization callback trigger
                     }
+                    repository.startListeningToStatuses {
+                        // real-time status synchronization callback trigger
+                    }
+                    repository.startGlobalChatsListener(me) {
+                        // real-time global messaging synchronization callback trigger
+                    }
                 } else {
                     repository.stopListeningToGroups()
+                    repository.stopListeningToStatuses()
+                    repository.stopAllMessageListeners()
                 }
             }
         }
 
-        // Real-time listener for Firestore statuses
+        // Dynamically spin up real-time message listeners for any contact or group loaded locally
         viewModelScope.launch {
-            _myNumber.collect { me ->
-                if (me != null) {
-                    repository.startListeningToStatuses {
-                        // real-time status synchronization callback trigger
+            repository.allContacts.collect { contactList ->
+                val me = _myNumber.value
+                if (me != null && isFirebaseConfigured.value) {
+                    for (contact in contactList) {
+                        if (!contact.isSimulated) {
+                            repository.startListeningToChatMessages(me, contact.phone) {
+                                // Message received successfully, Room and Flows auto-sync the layouts
+                            }
+                        }
                     }
-                } else {
-                    repository.stopListeningToStatuses()
                 }
             }
         }
@@ -304,6 +315,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         userProfilePicBase64.value = ""
         userDisplayName.value = ""
         repository.stopListeningToGroups()
+        repository.stopAllMessageListeners()
         viewModelScope.launch {
             db.contactDao().deleteAllContacts()
         }
@@ -311,6 +323,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     fun selectContact(contact: Contact?) {
         _activeContact.value = contact
+        repository.setActiveChatPhone(contact?.phone)
         val me = _myNumber.value
         if (contact != null && me != null) {
             viewModelScope.launch {
@@ -459,22 +472,6 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun seedDummyContacts() {
         val existing = db.contactDao().getAllContacts().firstOrNull()?.size ?: 0
         if (existing == 0) {
-            val dummy1 = Contact(
-                phone = "01711122233",
-                name = "সাকিব আল হাসান 🟢",
-                isSimulated = true,
-                lastSeen = "online",
-                lastMessageText = "আসসালামু আলাইকুম! কেমন আছেন?",
-                lastMessageTime = System.currentTimeMillis() - 7200000
-            )
-            val dummy2 = Contact(
-                phone = "01944455566",
-                name = "রাফি চৌধুরী 💬",
-                isSimulated = true,
-                lastSeen = "last seen today at 2:15 PM",
-                lastMessageText = "বার্তা অ্যাপের নতুন আপডেটটি জাস্ট অসাধারণ!",
-                lastMessageTime = System.currentTimeMillis() - 3600000
-            )
             val dummy3 = Contact(
                 phone = "01300000000",
                 name = "বার্তা সহকারী (Bot) 🤖",
@@ -484,28 +481,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 lastMessageTime = System.currentTimeMillis()
             )
 
-            repository.addContact(dummy1)
-            repository.addContact(dummy2)
             repository.addContact(dummy3)
 
-            val dummyStatus1 = ChatStatus(
-                id = "dummy_status_1",
-                phone = "01711122233",
-                name = "সাকিব আল হাসান 🟢",
-                avatar = "",
-                text = "আজকের আবহাওয়া চমৎকার! প্র্যাকটিস সেশন শেষ করলাম। 🌸🏏",
-                timestamp = System.currentTimeMillis() - 1200000L,
-                bgColorVal = 0xFF43A047L
-            )
-            val dummyStatus2 = ChatStatus(
-                id = "dummy_status_2",
-                phone = "01944455566",
-                name = "রাফি চৌধুরী 💬",
-                avatar = "",
-                text = "নতুন গান শুনছি... 🎵🎧 চিল ভাইবস!",
-                timestamp = System.currentTimeMillis() - 3600000L,
-                bgColorVal = 0xFF1E88E5L
-            )
             val dummyStatus3 = ChatStatus(
                 id = "dummy_status_3",
                 phone = "01300000000",
@@ -516,8 +493,6 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 bgColorVal = 0xFF5E35B1L
             )
 
-            db.statusDao().insertStatus(dummyStatus1)
-            db.statusDao().insertStatus(dummyStatus2)
             db.statusDao().insertStatus(dummyStatus3)
         }
     }
