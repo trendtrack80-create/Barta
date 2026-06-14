@@ -63,6 +63,14 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     val firebaseAppId = MutableStateFlow("")
     val isFirebaseConfigured = MutableStateFlow(false)
 
+    // Language setting
+    val appLanguage = MutableStateFlow(sharedPrefs.getString("app_language", "bn") ?: "bn")
+
+    fun setAppLanguage(lang: String) {
+        appLanguage.value = lang
+        sharedPrefs.edit().putString("app_language", lang).apply()
+    }
+
     // User profile state inputs
     val userDisplayName = MutableStateFlow("")
     val userStatusMessage = MutableStateFlow("")
@@ -152,24 +160,26 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         val cleanPhone = phone.trim()
         val cleanName = name.trim()
         val cleanPass = password.trim()
+        val isBn = appLanguage.value == "bn"
 
         if (cleanName.isEmpty()) {
-            callback("অ্যাকাউন্ট তৈরির সময় সবার একটা নাম দিতে হবে!")
+            callback(if (isBn) "অ্যাকাউন্ট তৈরির সময় সবার একটা নাম দিতে হবে!" else "Please provide a name to create an account!")
             return
         }
         if (cleanPhone.length != 11 || !cleanPhone.startsWith("01") || !cleanPhone.all { it.isDigit() }) {
-            callback("দয়া করে সঠিক ১১ ডিজিটের বাংলাদেশ নাম্বার দিন!")
+            callback(if (isBn) "দয়া করে সঠিক ১১ ডিজিটের বাংলাদেশ নাম্বার দিন!" else "Please provide a valid 11-digit Bangladeshi number!")
             return
         }
         if (cleanPass.length < 6 || cleanPass.length > 8) {
-            callback("পাসওয়ার্ড অবশ্যই ৬ থেকে ৮ অক্ষরের মাঝে হতে হবে!")
+            callback(if (isBn) "পাসওয়ার্ড অবশ্যই ৬ থেকে ৮ অক্ষরের মাঝে হতে হবে!" else "Password must be between 6 and 8 characters long!")
             return
         }
 
         viewModelScope.launch {
             val exists = repository.getUserByPhone(cleanPhone)
-            if (exists != null) {
-                callback("এই কন্ট্যাক্ট নাম্বার দিয়ে ইতিমধ্যে অ্যাকাউন্ট তৈরি হয়েছে!")
+            val existsInFirestore = repository.getUserFromFirestore(cleanPhone)
+            if (exists != null || existsInFirestore != null) {
+                callback(if (isBn) "এই কন্ট্যাক্ট নাম্বার দিয়ে ইতিমধ্যে অ্যাকাউন্ট তৈরি হয়েছে!" else "An account with this phone number already exists!")
             } else {
                 val registered = repository.registerLocalUser(cleanPhone, cleanName, cleanPass, profilePic)
                 if (registered) {
@@ -179,15 +189,15 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         .putString("logged_user_profile_pic", profilePic)
                         .putString("logged_user_status_message", "বার্তা (Chat) ব্যবহার করছি!")
                         .apply()
+                    seedDummyContacts()
+                    showOnboarding.value = true
                     _myNumber.value = cleanPhone
                     userDisplayName.value = cleanName
                     userProfilePicBase64.value = profilePic
                     userStatusMessage.value = "বার্তা (Chat) ব্যবহার করছি!"
-                    seedDummyContacts()
-                    showOnboarding.value = true
                     callback(null)
                 } else {
-                    callback("রেজিস্ট্রেশন ব্যর্থ হয়েছে।")
+                    callback(if (isBn) "রেজিস্ট্রেশন ব্যর্থ হয়েছে।" else "Registration failed.")
                 }
             }
         }
@@ -196,13 +206,14 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     fun loginWithPassword(phone: String, pass: String, callback: (String?) -> Unit) {
         val cleanPhone = phone.trim()
         val cleanPass = pass.trim()
+        val isBn = appLanguage.value == "bn"
 
         if (cleanPhone.length != 11 || !cleanPhone.startsWith("01")) {
-            callback("মোবাইল নাম্বারটি অবশ্যই ১১ ডিজিটের হতে হবে!")
+            callback(if (isBn) "মোবাইল নাম্বারটি অবশ্যই ১১ ডিজিটের হতে হবে!" else "Mobile number must be exactly 11 digits!")
             return
         }
         if (cleanPass.length < 6 || cleanPass.length > 8) {
-            callback("পাসওয়ার্ড অবশ্যই ৬ থেকে ৮ অক্ষরের হতে হবে!")
+            callback(if (isBn) "পাসওয়ার্ড অবশ্যই ৬ থেকে ৮ অক্ষরের হতে হবে!" else "Password must be between 6 and 8 characters!")
             return
         }
 
@@ -222,22 +233,22 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         repository.insertLocalUserDirectly(newUser)
                         user = newUser
                     } else if (fsPassword.isNotEmpty() && fsPassword != cleanPass) {
-                        callback("ভুল পাসওয়ার্ড! দয়া করে সঠিক পাসওয়ার্ড দিন।")
+                        callback(if (isBn) "ভুল পাসওয়ার্ড! দয়া করে সঠিক পাসওয়ার্ড দিন।" else "Incorrect password! Please try again.")
                         return@launch
                     } else {
                         // Document exists but no passwordHash saved (legacy user). Let's allow creating local user check or show specific msg
-                        callback("এই নাম্বার দিয়ে কোনো সম্পূর্ণ অ্যাকাউন্ট পাওয়া যায়নি বা পাসওয়ার্ড মেলেনি।")
+                        callback(if (isBn) "এই নাম্বার দিয়ে কোনো সম্পূর্ণ অ্যাকাউন্ট পাওয়া যায়নি বা পাসওয়ার্ড মেলেনি।" else "No complete account found with this number or password mismatch.")
                         return@launch
                     }
                 } else {
-                    callback("এই নাম্বার দিয়ে কোনো অ্যাকাউন্ট পাওয়া যায়নি! রেজিস্ট্রেশন করুন।")
+                    callback(if (isBn) "এই নাম্বার দিয়ে কোনো অ্যাকাউন্ট পাওয়া যায়নি! রেজিস্ট্রেশন করুন।" else "No account found with this number! Please register.")
                     return@launch
                 }
             }
 
             if (user != null) {
                 if (user.passwordHash != cleanPass) {
-                    callback("ভুল পাসওয়ার্ড! দয়া করে সঠিক পাসওয়ার্ড দিন।")
+                    callback(if (isBn) "ভুল পাসওয়ার্ড! দয়া করে সঠিক পাসওয়ার্ড দিন।" else "Incorrect password! Please try again.")
                 } else {
                     sharedPrefs.edit()
                         .putString("logged_user_phone", cleanPhone)

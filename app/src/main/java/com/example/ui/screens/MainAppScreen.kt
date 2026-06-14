@@ -68,6 +68,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
+fun getTranslator(viewModel: ChatViewModel): (String, String) -> String {
+    val lang by viewModel.appLanguage.collectAsStateWithLifecycle()
+    return remember(lang) { { bn, en -> if (lang == "bn") bn else en } }
+}
+
+@Composable
 fun MainAppScreen(
     viewModel: ChatViewModel,
     modifier: Modifier = Modifier
@@ -76,6 +82,8 @@ fun MainAppScreen(
     val loggedInNumber by viewModel.myNumber.collectAsStateWithLifecycle()
     val activeChatContact by viewModel.activeContact.collectAsStateWithLifecycle()
     val showOnboarding by viewModel.showOnboarding.collectAsStateWithLifecycle()
+    val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
+    val txt = getTranslator(viewModel = viewModel)
 
     Box(
         modifier = modifier
@@ -84,8 +92,6 @@ fun MainAppScreen(
     ) {
         if (!isConnected) {
             OfflineBlockerScreen()
-        } else if (loggedInNumber == null) {
-            AuthScreen(viewModel = viewModel)
         } else if (showOnboarding) {
             GreetingOnboardingScreen(
                 viewModel = viewModel,
@@ -93,6 +99,8 @@ fun MainAppScreen(
                     viewModel.showOnboarding.value = false
                 }
             )
+        } else if (loggedInNumber == null) {
+            AuthScreen(viewModel = viewModel)
         } else {
             Scaffold(
                 bottomBar = {
@@ -290,7 +298,7 @@ fun OfflineBlockerScreen() {
             ) {
                 Icon(
                     imageVector = Icons.Default.Refresh,
-                    contentDescription = "Retry Connection Icon",
+                    contentDescription = "Retry",
                     tint = Color.White
                 )
                 Spacer(modifier = Modifier.width(8.dp))
@@ -310,6 +318,7 @@ fun GreetingOnboardingScreen(
     viewModel: ChatViewModel,
     onFinished: () -> Unit
 ) {
+    val txt = getTranslator(viewModel = viewModel)
     var currentPage by remember { mutableIntStateOf(0) }
     val totalPages = 3
 
@@ -368,7 +377,7 @@ fun GreetingOnboardingScreen(
                 }
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
-                    text = "বার্তা (Barta)",
+                    text = txt("বার্তা (Barta)", "Barta (Chat)"),
                     fontWeight = FontWeight.Bold,
                     fontSize = 20.sp,
                     color = WhatsAppTealVal
@@ -401,9 +410,9 @@ fun GreetingOnboardingScreen(
                     label = "slidePageTransition"
                 ) { page ->
                     when (page) {
-                        0 -> OnboardingWelcomePage()
-                        1 -> OnboardingFeaturesPage()
-                        2 -> OnboardingHighlightsPage()
+                        0 -> OnboardingWelcomePage(txt)
+                        1 -> OnboardingFeaturesPage(txt)
+                        2 -> OnboardingHighlightsPage(txt)
                     }
                 }
             }
@@ -452,7 +461,7 @@ fun GreetingOnboardingScreen(
                             modifier = Modifier.testTag("onboarding_back_btn")
                         ) {
                             Text(
-                                text = "পূর্ববর্তী",
+                                text = txt("পূর্ববর্তী", "Back"),
                                 color = WhatsAppTealVal,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 15.sp
@@ -478,9 +487,9 @@ fun GreetingOnboardingScreen(
                             .testTag("onboarding_next_btn")
                     ) {
                         val buttonText = if (currentPage == totalPages - 1) {
-                            "চ্যাট শুরু করুন 🚀"
+                            txt("চ্যাট শুরু করুন 🚀", "Start Chatting 🚀")
                         } else {
-                            "পরবর্তী"
+                            txt("পরবর্তী", "Next")
                         }
                         Text(
                             text = buttonText,
@@ -497,7 +506,7 @@ fun GreetingOnboardingScreen(
 }
 
 @Composable
-fun OnboardingWelcomePage() {
+fun OnboardingWelcomePage(txt: (String, String) -> String) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
@@ -528,7 +537,7 @@ fun OnboardingWelcomePage() {
         Spacer(modifier = Modifier.height(28.dp))
 
         Text(
-            text = "বার্তা (Barta) চ্যাটে স্বাগতম! 🎉",
+            text = txt("বার্তা (Barta) চ্যাটে স্বাগতম! 🎉", "Welcome to Barta Chat! 🎉"),
             fontWeight = FontWeight.Bold,
             fontSize = 23.sp,
             color = Color(0xFF1F2937),
@@ -538,7 +547,7 @@ fun OnboardingWelcomePage() {
         Spacer(modifier = Modifier.height(14.dp))
 
         Text(
-            text = "সহজ, নিরাপদ ও বিজ্ঞাপনহীন যোগাযোগের একমাত্র নির্ভরযোগ্য চ্যাট অ্যাপ্লিকেশন। কোনো বাড়তি জটিলতা বা ঝামেলা ছাড়াই আপনার বন্ধুদের সাথে সর্বদা সংযুক্ত থাকুন।",
+            text = txt("সহজ, নিরাপদ ও বিজ্ঞাপনহীন যোগাযোগের একমাত্র নির্ভরযোগ্য চ্যাট অ্যাপ্লিকেশন। কোনো বাড়তি জটিলতা বা ঝামেলা ছাড়াই আপনার বন্ধুদের সাথে সর্বদা সংযুক্ত থাকুন।", "The ultimate reliable, secure, and ad-free chat application for seamless and direct conversation. Keep connected with your friends instantly without any clutter or complexity."),
             fontSize = 15.sp,
             color = Color(0xFF4B5563),
             textAlign = TextAlign.Center,
@@ -548,7 +557,7 @@ fun OnboardingWelcomePage() {
 }
 
 @Composable
-fun OnboardingFeaturesPage() {
+fun OnboardingFeaturesPage(txt: (String, String) -> String) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Top,
@@ -557,7 +566,7 @@ fun OnboardingFeaturesPage() {
             .padding(horizontal = 4.dp)
     ) {
         Text(
-            text = "আমাদের চমৎকার সুবিধাসমূহ ✨",
+            text = txt("আমাদের চমৎকার সুবিধাসমূহ ✨", "Our Awesome Features ✨"),
             fontWeight = FontWeight.Bold,
             fontSize = 20.sp,
             color = Color(0xFF1F2937),
@@ -571,27 +580,27 @@ fun OnboardingFeaturesPage() {
         ) {
             OnboardingFeatureCard(
                 icon = "⚡",
-                title = "রিয়েল-টাইম চ্যাট ও গ্রুপ",
-                description = "অতি দ্রুত চ্যাট মেসেজ এবং ক্লাস বা প্রজেক্টের আলোচনার জন্য তাৎক্ষণিক গ্রুপ খোলার চমৎকার সুবিধা।"
+                title = txt("রিয়েল-টাইম চ্যাট ও গ্রুপ", "Real-Time Chat & Groups"),
+                description = txt("অতি দ্রুত চ্যাট মেসেজ এবং ক্লাস বা প্রজেক্টের আলোচনার জন্য তাৎক্ষণিক গ্রুপ খোলার চমৎকার সুবিধা।", "Superfast private messaging and instant student/project discussion groups.")
             )
 
             OnboardingFeatureCard(
                 icon = "📷",
-                title = "ছবি ও ২৪ ঘণ্টার চমৎকার স্ট্যাটাস",
-                description = "মনের গোপন কথা লিখে স্টোরি ও ছবি বা পছন্দের রঙিন ব্যাকগ্রাউন্ড ডিজাইনে স্ট্যাটাস শেয়ার করুন।"
+                title = txt("ছবি ও ২৪ ঘণ্টার চমৎকার স্ট্যাটাস", "Photos & 24h Stories"),
+                description = txt("মনের গোপন কথা লিখে স্টোরি ও ছবি বা পছন্দের রঙিন ব্যাকগ্রাউন্ড ডিজাইনে স্ট্যাটাস শেয়ার করুন।", "Express yourself freely via personal status messages, rich media uploads, or colorful canvas backdrops.")
             )
 
             OnboardingFeatureCard(
                 icon = "🪄",
-                title = "মেসেজ এডিট ও ডিলিট ক্ষমতা",
-                description = "মেসেজ ভুল হলে তা সরাসরি সংশোধনের সুযোগ অথবা সবার জন্য সম্পূর্ণ মুছে ফেলার (Delete for Everyone) অফুরন্ত স্বাধীনতা।"
+                title = txt("মেসেজ এডিট ও ডিলিট ক্ষমতা", "Message Edit & Global Undo"),
+                description = txt("মেসেজ ভুল হলে তা সরাসরি সংশোধনের সুযোগ অথবা সবার জন্য সম্পূর্ণ মুছে ফেলার (Delete for Everyone) অফুরন্ত স্বাধীনতা।", "Edit typos inline or erase sent chats completely for all participants using Delete for Everyone.")
             )
         }
     }
 }
 
 @Composable
-fun OnboardingHighlightsPage() {
+fun OnboardingHighlightsPage(txt: (String, String) -> String) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Top,
@@ -600,7 +609,7 @@ fun OnboardingHighlightsPage() {
             .padding(horizontal = 4.dp)
     ) {
         Text(
-            text = "স্মার্ট প্রযুক্তি ও সম্পূর্ণ নিয়ন্ত্রণ 🛡️",
+            text = txt("স্মার্ট প্রযুক্তি ও সম্পূর্ণ নিয়ন্ত্রণ 🛡️", "Smart Tech & Total Control 🛡️"),
             fontWeight = FontWeight.Bold,
             fontSize = 20.sp,
             color = Color(0xFF1F2937),
@@ -614,20 +623,20 @@ fun OnboardingHighlightsPage() {
         ) {
             OnboardingFeatureCard(
                 icon = "🤖",
-                title = "স্মার্ট বার্তা সহকারী (AI Bot)",
-                description = "যেকোনো কঠিন প্রশ্নের উত্তর জানতে বা প্রজেক্ট সাজাতে সাহায্য বা সাধারণ চ্যাট করতে সর্বদা প্রস্তুত আপনার এআই বন্ধু!"
+                title = txt("স্মার্ট বার্তা সহকারী (AI Bot)", "Smart AI Assistant Bot"),
+                description = txt("যেকোনো কঠিন প্রশ্নের উত্তর জানতে বা প্রজেক্ট সাজাতে সাহায্য বা সাধারণ চ্যাট করতে সর্বদা প্রস্তুত আপনার এআই বন্ধু!", "Your helper is always available to resolve assignments, write creative summaries, or guide chats.")
             )
 
             OnboardingFeatureCard(
                 icon = "🟢",
-                title = "অনলাইন স্ট্যাটাস ও টাইপ অনুভূতি",
-                description = "বন্ধুরা কখন লাইনে আছে বা কি লিখছে তা সরাসরি দেখার চমৎকার অনুভূতি।"
+                title = txt("অনলাইন স্ট্যাটাস ও টাইপ অনুভূতি", "Typing Details & Online Presence"),
+                description = txt("বন্ধুরা কখন লাইনে আছে বা কি লিখছে তা সরাসরি দেখার চমৎকার অনুভূতি।", "Relish knowing exactly when your peers are active or composing key responses live.")
             )
 
             OnboardingFeatureCard(
                 icon = "🔒",
-                title = "১০০% বিজ্ঞাপনহীন ও সর্বোচ্চ নিরাপত্তা",
-                description = "কোনো বিরক্তিকর বিজ্ঞাপন ছাড়াই চ্যাটিংয়ের পূর্ণ স্বাচ্ছন্দ্যতা ও ব্যবহারকারীর ডেটার সুরক্ষিত নিরাপত্তা।"
+                title = txt("১০০% বিজ্ঞাপনহীন ও সর্বোচ্চ নিরাপত্তা", "Secure, Private & 100% Ad-Free"),
+                description = txt("কোনো বিরক্তিকর বিজ্ঞাপন ছাড়াই চ্যাটিংয়ের পূর্ণ স্বাচ্ছন্দ্যতা ও ব্যবহারকারীর ডেটার সুরক্ষিত নিরাপত্তা।", "Savor high-octane messaging with complete visual tranquility and state-of-the-art storage privacy.")
             )
         }
     }
@@ -683,6 +692,7 @@ fun OnboardingFeatureCard(
 fun AuthScreen(
     viewModel: ChatViewModel
 ) {
+    val txt = getTranslator(viewModel = viewModel)
     var isSignUp by remember { mutableStateOf(false) }
     var phoneNumber by remember { mutableStateOf("") }
     var nameInput by remember { mutableStateOf("") }
@@ -699,10 +709,10 @@ fun AuthScreen(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted: Boolean ->
         if (isGranted) {
-            Toast.makeText(context, "অনুমতি পাওয়া গেছে! এখন ছবি সিলেক্ট করুন।", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, txt("অনুমতি পাওয়া গেছে! এখন ছবি সিলেক্ট করুন।", "Permission granted! Now select an image."), Toast.LENGTH_SHORT).show()
             showPhotoSelector = true
         } else {
-            Toast.makeText(context, "ছবি আপলোড করতে স্টোরেজ/ক্যামেরা পারমিশন প্রয়োজন!", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, txt("ছবি আপলোড করতে স্টোরেজ/ক্যামেরা পারমিশন প্রয়োজন!", "Camera/Storage permission is required to upload profile pictures!"), Toast.LENGTH_LONG).show()
             // Dynamic fallback list triggers anyways for great testing fidelity
             showPhotoSelector = true
         }
@@ -716,9 +726,9 @@ fun AuthScreen(
                 if (localPath != null) {
                     profilePicBase64 = localPath
                     showPhotoSelector = false
-                    Toast.makeText(context, "গ্যালারি থেকে ছবি সফলভাবে যুক্ত হয়েছে!", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, txt("গ্যালারি থেকে ছবি সফলভাবে যুক্ত হয়েছে!", "Image successfully imported from gallery!"), Toast.LENGTH_SHORT).show()
                 } else {
-                    Toast.makeText(context, "ছবি লোড করতে সমস্যা হয়েছে!", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, txt("ছবি লোড করতে সমস্যা হয়েছে!", "Failed to load image!"), Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -750,14 +760,14 @@ fun AuthScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         Text(
-            text = "বার্তা (Chat)",
+            text = txt("বার্তা (Chat)", "Barta (Chat)"),
             fontSize = 28.sp,
             fontWeight = FontWeight.Bold,
             color = WhatsAppTealVal
         )
 
         Text(
-            text = "বাংলাদেশের প্রথম সহজ নিরাপদ চ্যাট প্ল্যাটফর্ম",
+            text = txt("বাংলাদেশের প্রথম সহজ নিরাপদ চ্যাট প্ল্যাটফর্ম", "The first simple & secure chat platform in Bangladesh"),
             fontSize = 13.sp,
             color = Color.Gray,
             modifier = Modifier.padding(top = 2.dp, bottom = 24.dp)
@@ -797,7 +807,7 @@ fun AuthScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "লগইন",
+                            text = txt("লগইন", "Login"),
                             fontWeight = FontWeight.Bold,
                             color = if (!isSignUp) WhatsAppTealVal else Color.Gray,
                             fontSize = 14.sp
@@ -819,7 +829,7 @@ fun AuthScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "একাউন্ট তৈরি",
+                            text = txt("একাউন্ট তৈরি", "Sign Up"),
                             fontWeight = FontWeight.Bold,
                             color = if (isSignUp) WhatsAppTealVal else Color.Gray,
                             fontSize = 14.sp
@@ -828,7 +838,7 @@ fun AuthScreen(
                 }
 
                 Text(
-                    text = if (isSignUp) "নতুন একাউন্ট তৈরি করুন" else "লগইন করুন",
+                    text = if (isSignUp) txt("নতুন একাউন্ট তৈরি করুন", "Create New Account") else txt("লগইন করুন", "Log in to your Account"),
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp,
                     color = Color.White,
@@ -859,7 +869,7 @@ fun AuthScreen(
                         } else {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Icon(Icons.Default.AddAPhoto, contentDescription = "Upload Picture", tint = Color.Gray, modifier = Modifier.size(24.dp))
-                                Text("ছবি দিন", fontSize = 10.sp, color = Color.Gray)
+                                Text(txt("ছবি দিন", "Photo"), fontSize = 10.sp, color = Color.Gray)
                             }
                         }
                     }
@@ -871,8 +881,8 @@ fun AuthScreen(
                             nameInput = it
                             errorMessage = null
                         },
-                        label = { Text("আপনার নাম (আবশ্যক)") },
-                        placeholder = { Text("উদা: রাইসা আলম") },
+                        label = { Text(txt("আপনার নাম (আবশ্যক)", "Your Name (Required)")) },
+                        placeholder = { Text(txt("উদা: রাইসা আলম", "e.g. Raisa Alam")) },
                         singleLine = true,
                         leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = Color.Gray) },
                         colors = OutlinedTextFieldDefaults.colors(
@@ -895,7 +905,7 @@ fun AuthScreen(
                         phoneNumber = it.filter { char -> char.isDigit() }
                         errorMessage = null
                     },
-                    label = { Text("মোবাইল নাম্বার") },
+                    label = { Text(txt("মোবাইল নাম্বার", "Mobile Number")) },
                     placeholder = { Text("01XXXXXXXXX") },
                     prefix = { Text("+88 ") },
                     singleLine = true,
@@ -925,7 +935,7 @@ fun AuthScreen(
                         passwordInput = it
                         errorMessage = null
                     },
-                    label = { Text("পাসওয়ার্ড (৬-৮ ক্যারেক্টার)") },
+                    label = { Text(txt("পাসওয়ার্ড (৬-৮ ক্যারেক্টার)", "Password (6-8 characters)")) },
                     placeholder = { Text("******") },
                     singleLine = true,
                     leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = Color.Gray) },
@@ -977,7 +987,7 @@ fun AuthScreen(
                                 if (error != null) {
                                     errorMessage = error
                                 } else {
-                                    Toast.makeText(context, "সফলভাবে একাউন্ট তৈরি এবং লগইন হয়েছে!", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, txt("সফলভাবে একাউন্ট তৈরি এবং লগইন হয়েছে!", "Account successfully created and logged in!"), Toast.LENGTH_SHORT).show()
                                 }
                             }
                         } else {
@@ -985,7 +995,7 @@ fun AuthScreen(
                                 if (error != null) {
                                     errorMessage = error
                                 } else {
-                                    Toast.makeText(context, "লগইন সফল হয়েছে!", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, txt("লগইন সফল হয়েছে!", "Login successful!"), Toast.LENGTH_SHORT).show()
                                 }
                             }
                         }
@@ -998,7 +1008,7 @@ fun AuthScreen(
                     shape = RoundedCornerShape(10.dp)
                 ) {
                     Text(
-                        text = if (isSignUp) "একাউন্ট তৈরি করুন" else "লগইন করুন",
+                        text = if (isSignUp) txt("একাউন্ট তৈরি করুন", "Create Account") else txt("লগইন করুন", "Log In"),
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp
@@ -1012,10 +1022,10 @@ fun AuthScreen(
     if (showPhotoSelector) {
         AlertDialog(
             onDismissRequest = { showPhotoSelector = false },
-            title = { Text("প্রোফাইল ছবি নির্বাচন করুন", fontWeight = FontWeight.Bold, color = WhatsAppTealVal) },
+            title = { Text(txt("প্রোফাইল ছবি নির্বাচন করুন", "Select Profile Picture"), fontWeight = FontWeight.Bold, color = WhatsAppTealVal) },
             text = {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("নিচের যেকোনো একটি সুন্দর কার্টুন ছবি স্পর্শ করে সিলেক্ট করুন:", fontSize = 12.sp, color = Color.Gray)
+                    Text(txt("নিচের যেকোনো একটি সুন্দর কার্টুন ছবি স্পর্শ করে সিলেক্ট করুন:", "Select any of the cartoon avatars below by tapping on it:"), fontSize = 12.sp, color = Color.Gray)
                     Spacer(modifier = Modifier.height(16.dp))
                     
                     val dummyPics = listOf("pic1", "pic2", "pic3", "pic4", "pic5", "pic6")
@@ -1073,7 +1083,7 @@ fun AuthScreen(
                     ) {
                         Icon(Icons.Default.PhotoLibrary, contentDescription = null, tint = Color.White)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("গ্যালারি থেকে ছবি নিন", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text(txt("গ্যালারি থেকে ছবি নিন", "Pick from Gallery"), color = Color.White, fontWeight = FontWeight.Bold)
                     }
                 }
             },
@@ -1082,7 +1092,7 @@ fun AuthScreen(
                     onClick = { showPhotoSelector = false },
                     colors = ButtonDefaults.buttonColors(containerColor = WhatsAppGreenVal)
                 ) {
-                    Text("অনুমোদন দিন", color = Color.White)
+                    Text(txt("অনুমোদন দিন", "OK"), color = Color.White)
                 }
             }
         )
@@ -1094,6 +1104,7 @@ fun BottomBarNavigation(
     viewModel: ChatViewModel
 ) {
     val currentTab by viewModel.currentTab.collectAsStateWithLifecycle()
+    val txt = getTranslator(viewModel = viewModel)
 
     NavigationBar(
         containerColor = MaterialTheme.colorScheme.surface,
@@ -1103,7 +1114,7 @@ fun BottomBarNavigation(
             selected = currentTab == "chats",
             onClick = { viewModel.selectTab("chats") },
             icon = { Icon(Icons.AutoMirrored.Filled.Message, contentDescription = "Chats") },
-            label = { Text("চ্যাট", fontSize = 11.sp) },
+            label = { Text(txt("চ্যাট", "Chats"), fontSize = 11.sp) },
             colors = NavigationBarItemDefaults.colors(
                 selectedIconColor = WhatsAppTealVal,
                 selectedTextColor = WhatsAppTealVal,
@@ -1115,7 +1126,7 @@ fun BottomBarNavigation(
             selected = currentTab == "groups",
             onClick = { viewModel.selectTab("groups") },
             icon = { Icon(Icons.Default.Groups, contentDescription = "Groups") },
-            label = { Text("গ্রুপ", fontSize = 11.sp) },
+            label = { Text(txt("গ্রুপ", "Groups"), fontSize = 11.sp) },
             colors = NavigationBarItemDefaults.colors(
                 selectedIconColor = WhatsAppTealVal,
                 selectedTextColor = WhatsAppTealVal,
@@ -1127,7 +1138,7 @@ fun BottomBarNavigation(
             selected = currentTab == "status",
             onClick = { viewModel.selectTab("status") },
             icon = { Icon(Icons.Default.CircleNotifications, contentDescription = "Status") },
-            label = { Text("স্ট্যাটাস", fontSize = 11.sp) },
+            label = { Text(txt("স্ট্যাটাস", "Status"), fontSize = 11.sp) },
             colors = NavigationBarItemDefaults.colors(
                 selectedIconColor = WhatsAppTealVal,
                 selectedTextColor = WhatsAppTealVal,
@@ -1139,7 +1150,7 @@ fun BottomBarNavigation(
             selected = currentTab == "contacts",
             onClick = { viewModel.selectTab("contacts") },
             icon = { Icon(Icons.Default.People, contentDescription = "Contacts") },
-            label = { Text("পরিচিত", fontSize = 11.sp) },
+            label = { Text(txt("পরিচিত", "Contacts"), fontSize = 11.sp) },
             colors = NavigationBarItemDefaults.colors(
                 selectedIconColor = WhatsAppTealVal,
                 selectedTextColor = WhatsAppTealVal,
@@ -1151,7 +1162,7 @@ fun BottomBarNavigation(
             selected = currentTab == "profile",
             onClick = { viewModel.selectTab("profile") },
             icon = { Icon(Icons.Default.Person, contentDescription = "Profile") },
-            label = { Text("প্রোফাইল", fontSize = 11.sp) },
+            label = { Text(txt("প্রোফাইল", "Profile"), fontSize = 11.sp) },
             colors = NavigationBarItemDefaults.colors(
                 selectedIconColor = WhatsAppTealVal,
                 selectedTextColor = WhatsAppTealVal,
@@ -1163,7 +1174,7 @@ fun BottomBarNavigation(
             selected = currentTab == "settings",
             onClick = { viewModel.selectTab("settings") },
             icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
-            label = { Text("সেটিংস", fontSize = 11.sp) },
+            label = { Text(txt("সেটিংস", "Settings"), fontSize = 11.sp) },
             colors = NavigationBarItemDefaults.colors(
                 selectedIconColor = WhatsAppTealVal,
                 selectedTextColor = WhatsAppTealVal,
@@ -1183,6 +1194,7 @@ fun ChatsTabScreen(
     val contactsList by viewModel.contacts.collectAsStateWithLifecycle()
     val searchVal by viewModel.searchQuery.collectAsStateWithLifecycle()
     val myPhone by viewModel.myNumber.collectAsStateWithLifecycle()
+    val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
 
     // Filter out group chats for individual conversations
     val individualChats = remember(contactsList) { contactsList.filter { !it.isGroup } }
@@ -1309,6 +1321,7 @@ fun ChatsTabScreen(
                 items(individualChats) { contact ->
                     ChatRowItem(
                         contact = contact,
+                        lang = appLanguage,
                         onClick = { onChatClick(contact) }
                     )
                     HorizontalDivider(
@@ -1353,6 +1366,7 @@ fun GroupsTabScreen(
     onChatClick: (Contact) -> Unit
 ) {
     val contactsList by viewModel.contacts.collectAsStateWithLifecycle()
+    val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
     val searchVal by viewModel.searchQuery.collectAsStateWithLifecycle()
     val myPhone by viewModel.myNumber.collectAsStateWithLifecycle()
 
@@ -1446,6 +1460,7 @@ fun GroupsTabScreen(
                     items(groupChats) { contact ->
                         ChatRowItem(
                             contact = contact,
+                            lang = appLanguage,
                             onClick = { onChatClick(contact) }
                         )
                         HorizontalDivider(
@@ -2133,6 +2148,8 @@ fun SettingsTabScreen(
     val myPhone by viewModel.myNumber.collectAsStateWithLifecycle()
     val myName = viewModel.userDisplayName.value
     val myProfilePic = viewModel.userProfilePicBase64.value
+    val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
+    val txt = getTranslator(viewModel = viewModel)
 
     var showPasswordChangeDialog by remember { mutableStateOf(false) }
     var newPasswordInput by remember { mutableStateOf("") }
@@ -2163,13 +2180,13 @@ fun SettingsTabScreen(
             title = {
                 Column {
                     Text(
-                        text = "সেটিংস (Settings)",
+                        text = txt("সেটিংস", "Settings"),
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
                         fontSize = 18.sp
                     )
                     Text(
-                        text = "Logged in as ${myPhone ?: ""}",
+                        text = txt("লগইন মোবাইল নম্বরঃ ${myPhone ?: ""}", "Logged in as ${myPhone ?: ""}"),
                         fontSize = 11.sp,
                         color = Color(0xFFC8E6C9)
                     )
@@ -2207,7 +2224,7 @@ fun SettingsTabScreen(
         }
 
         Text(
-            text = "অ্যাকাউন্ট ও নিরাপত্তা (Account & Security)",
+            text = txt("অ্যাকাউন্ট ও নিরাপত্তা", "Account & Security"),
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold,
             color = Color.Gray,
@@ -2232,15 +2249,75 @@ fun SettingsTabScreen(
                     Icon(Icons.Default.Lock, contentDescription = null, tint = WhatsAppTealVal)
                     Spacer(modifier = Modifier.width(14.dp))
                     Column {
-                        Text("পাসওয়ার্ড পরিবর্তন করুন", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = Color.Black)
-                        Text("আপনার ৬-৮ ডিজিটের পাসওয়ার্ড আপডেট করুন", fontSize = 12.sp, color = Color.Gray)
+                        Text(txt("পাসওয়ার্ড পরিবর্তন করুন", "Change Password"), fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = Color.Black)
+                        Text(txt("আপনার ৬-৮ ডিজিটের পাসওয়ার্ড আপডেট করুন", "Update your 6-8 character password"), fontSize = 12.sp, color = Color.Gray)
                     }
                 }
             }
         }
 
         Text(
-            text = "গোপনীয়তা সেটিংস (Privacy Options)",
+            text = txt("ভাষা সেটিংস", "Language Settings"),
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.Gray,
+            modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
+        )
+
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 12.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            shape = RectangleShape
+        ) {
+            Column {
+                var showLangMenu by remember { mutableStateOf(false) }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showLangMenu = true }
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Language, contentDescription = null, tint = WhatsAppTealVal)
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Column {
+                            Text(txt("অ্যাপের ভাষা", "App Language"), fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = Color.Black)
+                            Text(if (appLanguage == "bn") "বাংলা (Bangla)" else "English (English)", fontSize = 12.sp, color = Color.Gray)
+                        }
+                    }
+                    Box {
+                        TextButton(onClick = { showLangMenu = true }) {
+                            Text(txt("পরিবর্তন করুন", "Change"), color = WhatsAppTealVal)
+                        }
+                        DropdownMenu(expanded = showLangMenu, onDismissRequest = { showLangMenu = false }) {
+                            DropdownMenuItem(
+                                text = { Text("বাংলা (Bangla)") },
+                                onClick = {
+                                    viewModel.setAppLanguage("bn")
+                                    showLangMenu = false
+                                    Toast.makeText(viewModel.getApplication(), "ভাষা পরিবর্তন সফল হয়েছে!", Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("English (English)") },
+                                onClick = {
+                                    viewModel.setAppLanguage("en")
+                                    showLangMenu = false
+                                    Toast.makeText(viewModel.getApplication(), "Language changed successfully!", Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        Text(
+            text = txt("গোপনীয়তা সেটিংস", "Privacy Options"),
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold,
             color = Color.Gray,
@@ -2256,8 +2333,15 @@ fun SettingsTabScreen(
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 // Last seen Privacy
-                var lastSeenChoice by remember { mutableStateOf("সবাই (Everyone)") }
+                var lastSeenChoice by remember { mutableStateOf("Everyone") }
                 var showLastSeenMenu by remember { mutableStateOf(false) }
+
+                val displayedLastSeen = when (lastSeenChoice) {
+                    "Everyone" -> txt("সবাই", "Everyone")
+                    "My Contacts" -> txt("আমার পরিচিত", "My Contacts")
+                    "Nobody" -> txt("কেউ না", "Nobody")
+                    else -> lastSeenChoice
+                }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -2265,21 +2349,25 @@ fun SettingsTabScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column {
-                        Text("সর্বশেষ সক্রিয়তা (Last Seen)", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = Color.Black)
-                        Text(lastSeenChoice, fontSize = 12.sp, color = Color.Gray)
+                        Text(txt("সর্বশেষ সক্রিয়তা", "Last Seen"), fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = Color.Black)
+                        Text(displayedLastSeen, fontSize = 12.sp, color = Color.Gray)
                     }
                     Box {
                         TextButton(onClick = { showLastSeenMenu = true }) {
-                            Text("বদল করুন", color = WhatsAppTealVal)
+                            Text(txt("বদল করুন", "Change"), color = WhatsAppTealVal)
                         }
                         DropdownMenu(expanded = showLastSeenMenu, onDismissRequest = { showLastSeenMenu = false }) {
-                            listOf("সবাই (Everyone)", "আমার পরিচিত (My Contacts)", "কেউ না (Nobody)").forEach { choice ->
+                            listOf(
+                                "Everyone" to txt("সবাই (Everyone)", "Everyone"),
+                                "My Contacts" to txt("আমার পরিচিত (My Contacts)", "My Contacts"),
+                                "Nobody" to txt("কেউ না (Nobody)", "Nobody")
+                            ).forEach { (key, label) ->
                                 DropdownMenuItem(
-                                    text = { Text(choice) },
+                                    text = { Text(label) },
                                     onClick = {
-                                        lastSeenChoice = choice
+                                        lastSeenChoice = key
                                         showLastSeenMenu = false
-                                        Toast.makeText(viewModel.getApplication(), "গোপনীয়তা সেটিংস সফলভাবে আপডেট হয়েছে!", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(viewModel.getApplication(), txt("গোপনীয়তা সেটিংস সফলভাবে আপডেট হয়েছে!", "Privacy settings successfully updated!"), Toast.LENGTH_SHORT).show()
                                     }
                                 )
                             }
@@ -2290,8 +2378,14 @@ fun SettingsTabScreen(
                 HorizontalDivider(color = Color(0xFFF1F1F1))
 
                 // Profile photo visibility
-                var photoVisibility by remember { mutableStateOf("সবাই (Everyone)") }
+                var photoVisibility by remember { mutableStateOf("Everyone") }
                 var showPhotoMenu by remember { mutableStateOf(false) }
+
+                val displayedPhotoVisibility = when (photoVisibility) {
+                    "Everyone" -> txt("সবাই", "Everyone")
+                    "Nobody" -> txt("কেউ না", "Nobody")
+                    else -> photoVisibility
+                }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -2299,21 +2393,24 @@ fun SettingsTabScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column {
-                        Text("প্রোফাইল ফটো (Profile Photo)", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = Color.Black)
-                        Text(photoVisibility, fontSize = 12.sp, color = Color.Gray)
+                        Text(txt("প্রোফাইল ফটো", "Profile Photo"), fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = Color.Black)
+                        Text(displayedPhotoVisibility, fontSize = 12.sp, color = Color.Gray)
                     }
                     Box {
                         TextButton(onClick = { showPhotoMenu = true }) {
-                            Text("বদল করুন", color = WhatsAppTealVal)
+                            Text(txt("বদল করুন", "Change"), color = WhatsAppTealVal)
                         }
                         DropdownMenu(expanded = showPhotoMenu, onDismissRequest = { showPhotoMenu = false }) {
-                            listOf("সবাই (Everyone)", "কেউ না (Nobody)").forEach { choice ->
+                            listOf(
+                                "Everyone" to txt("সবাই (Everyone)", "Everyone"),
+                                "Nobody" to txt("কেউ না (Nobody)", "Nobody")
+                            ).forEach { (key, label) ->
                                 DropdownMenuItem(
-                                    text = { Text(choice) },
+                                    text = { Text(label) },
                                     onClick = {
-                                        photoVisibility = choice
+                                        photoVisibility = key
                                         showPhotoMenu = false
-                                        Toast.makeText(viewModel.getApplication(), "গোপনীয়তা সেটিংস সফলভাবে আপডেট হয়েছে!", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(viewModel.getApplication(), txt("গোপনীয়তা সেটিংস সফলভাবে আপডেট হয়েছে!", "Privacy settings successfully updated!"), Toast.LENGTH_SHORT).show()
                                     }
                                 )
                             }
@@ -2331,14 +2428,14 @@ fun SettingsTabScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("পঠিত বার্তা নিশ্চিতকরণ (Read Receipts)", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = Color.Black)
-                        Text("অন্য কারোর ব্লু টিক চ্যাট দেখতে এটি সাহায্য করে", fontSize = 12.sp, color = Color.Gray)
+                        Text(txt("পঠিত বার্তা নিশ্চিতকরণ", "Read Receipts"), fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = Color.Black)
+                        Text(txt("অন্য কারোর ব্লু টিক চ্যাট দেখতে এটি সাহায্য করে", "Allows you to see read receipts from others"), fontSize = 12.sp, color = Color.Gray)
                     }
                     Switch(
                         checked = readReceiptsToggle,
                         onCheckedChange = {
                             readReceiptsToggle = it
-                            Toast.makeText(viewModel.getApplication(), "পঠিত বার্তা রিসিট আপডেট হয়েছে!", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(viewModel.getApplication(), txt("পঠিত বার্তা রিসিট আপডেট হয়েছে!", "Read receipts updated!"), Toast.LENGTH_SHORT).show()
                         },
                         colors = SwitchDefaults.colors(checkedThumbColor = WhatsAppGreenVal, checkedTrackColor = WhatsAppGreenVal.copy(alpha = 0.4f))
                     )
@@ -2347,7 +2444,7 @@ fun SettingsTabScreen(
         }
 
         Text(
-            text = "ফায়ারবেস ক্লাউড কানেকশন (Firebase Cloud Connection)",
+            text = txt("ফায়ারবেস ক্লাউড কানেকশন", "Firebase Cloud Connection"),
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold,
             color = Color.Gray,
@@ -2362,7 +2459,7 @@ fun SettingsTabScreen(
             shape = RectangleShape
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("রিয়েল টাইম সিংক্রোনাইজেশন ক্লাউড ডাটাবেস সেটিংস এখানে পরিবর্তন করুন:", fontSize = 12.sp, color = Color.Gray)
+                Text(txt("রিয়েল টাইম সিংক্রোনাইজেশন ক্লাউড ডাটাবেস সেটিংস এখানে পরিবর্তন করুন:", "Configure real-time cloud synchronization database parameters here:"), fontSize = 12.sp, color = Color.Gray)
 
                 OutlinedTextField(
                     value = editingApiKey,
@@ -2411,11 +2508,11 @@ fun SettingsTabScreen(
                         modifier = Modifier.weight(1f),
                         onClick = {
                             viewModel.saveFirebaseConfig(editingApiKey, editingProjectId, editingAppId)
-                            Toast.makeText(viewModel.getApplication(), "ক্লাউড কনফিগারেশন সেভ হয়েছে!", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(viewModel.getApplication(), txt("ক্লাউড কনফিগারেশন সেভ হয়েছে!", "Cloud configuration saved successfully!"), Toast.LENGTH_SHORT).show()
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = WhatsAppGreenVal)
                     ) {
-                        Text("সেভ করুন (Save)", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text(txt("সেভ করুন", "Save"), color = Color.White, fontWeight = FontWeight.Bold)
                     }
 
                     OutlinedButton(
@@ -2425,10 +2522,10 @@ fun SettingsTabScreen(
                             editingProjectId = ""
                             editingAppId = ""
                             viewModel.saveFirebaseConfig("", "", "")
-                            Toast.makeText(viewModel.getApplication(), "ক্লাউড কনফিগারেশন মুছে ফেলা হয়েছে!", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(viewModel.getApplication(), txt("ক্লাউড কনফিগারেশন মুছে ফেলা হয়েছে!", "Cloud configuration cleared successfully!"), Toast.LENGTH_SHORT).show()
                         }
                     ) {
-                        Text("মুছুন")
+                        Text(txt("মুছুন", "Clear"))
                     }
                 }
             }
@@ -2454,7 +2551,7 @@ fun SettingsTabScreen(
             ) {
                 Icon(Icons.Default.ExitToApp, contentDescription = null, tint = Color.Red)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("লগআউট করুন (Logout)", color = Color.Red, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Text(txt("লগআউট করুন", "Logout"), color = Color.Red, fontWeight = FontWeight.Bold, fontSize = 16.sp)
             }
         }
     }
@@ -2520,6 +2617,7 @@ data class UserStatus(
 @Composable
 fun ChatRowItem(
     contact: Contact,
+    lang: String = "bn",
     onClick: () -> Unit
 ) {
     Row(
@@ -2576,7 +2674,7 @@ fun ChatRowItem(
                 
                 val isOnline = contact.lastSeen == "online" || contact.lastSeen == "অনলাইন"
                 Text(
-                    text = if (contact.isGroup) "group" else formatLastSeenBengali(contact.lastSeen),
+                    text = if (contact.isGroup) "group" else formatLastSeenDynamic(contact.lastSeen, lang),
                     color = if (isOnline) WhatsAppGreenVal else Color.Gray,
                     fontSize = 11.sp,
                     fontWeight = if (isOnline) FontWeight.Bold else FontWeight.Normal
@@ -3466,6 +3564,8 @@ fun ChatWindowScreen(
 ) {
     val messageList by viewModel.activeMessages.collectAsStateWithLifecycle()
     val myNumber by viewModel.myNumber.collectAsStateWithLifecycle()
+    val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
+    val txt = getTranslator(viewModel = viewModel)
     var inputText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     val focusManager = LocalFocusManager.current
@@ -3566,7 +3666,7 @@ fun ChatWindowScreen(
                         // Show participants details if it is a Group Chat
                         if (contact.isGroup) {
                             Text(
-                                text = "সদস্যরা: ${contact.groupParticipants.replace("group_", "").take(80)}",
+                                text = txt("সদস্যরা: ", "Members: ") + contact.groupParticipants.replace("group_", "").take(80),
                                 color = Color(0xB3FFFFFF),
                                 fontSize = 11.sp,
                                 maxLines = 1,
@@ -3574,7 +3674,7 @@ fun ChatWindowScreen(
                             )
                         } else {
                             Text(
-                                text = if (contact.typingStatus.isNotEmpty()) contact.typingStatus else formatLastSeenBengali(contact.lastSeen),
+                                text = if (contact.typingStatus.isNotEmpty()) contact.typingStatus else formatLastSeenDynamic(contact.lastSeen, appLanguage),
                                 color = if (contact.typingStatus.isNotEmpty()) WhatsAppGreenVal else Color(0xB3FFFFFF),
                                 fontSize = 11.sp
                             )
@@ -4525,40 +4625,68 @@ fun copyUriToLocalFile(context: Context, uri: android.net.Uri): String? {
     }
 }
 
-fun formatLastSeenBengali(lastSeen: String): String {
-    if (lastSeen == "online") return "অনলাইন"
-    if (lastSeen == "offline") return "নিষ্ক্রিয়"
-    
-    val timestamp = lastSeen.toLongOrNull() ?: return lastSeen
-    val now = System.currentTimeMillis()
-    val diff = now - timestamp
-    
-    if (diff < 60000) {
-        return "এইমাত্র সক্রিয়"
-    } else if (diff < 3600000) {
-        val mins = diff / 60000
-        val minsBn = toBengaliDigits(mins.toString())
-        return "$minsBn মিনিট আগে সক্রিয়"
-    }
-    
-    val sdf = java.text.SimpleDateFormat("hh:mm a", java.util.Locale.US)
-    val timeStr = sdf.format(java.util.Date(timestamp))
-    
-    var formattedTime = timeStr
-        .replace("AM", "পূর্বাহ্ণ")
-        .replace("PM", "অপরাহ্ণ")
-    
-    formattedTime = toBengaliDigits(formattedTime)
-    
-    val daySdf = java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.US)
-    val mDateStr = daySdf.format(java.util.Date(timestamp))
-    val todayStr = daySdf.format(java.util.Date(now))
-    val yesterdayStr = daySdf.format(java.util.Date(now - 24 * 60 * 60 * 1000))
-    
-    return when (mDateStr) {
-        todayStr -> "আজ $formattedTime এ সক্রিয়"
-        yesterdayStr -> "গতকাল $formattedTime এ সক্রিয়"
-        else -> "${toBengaliDigits(mDateStr)} তারিখে সক্রিয়"
+fun formatLastSeenDynamic(lastSeen: String, lang: String): String {
+    if (lang == "en") {
+        if (lastSeen == "online") return "Online"
+        if (lastSeen == "offline") return "Inactive"
+        val timestamp = lastSeen.toLongOrNull() ?: return lastSeen
+        val now = System.currentTimeMillis()
+        val diff = now - timestamp
+        
+        if (diff < 60000) {
+            return "Active just now"
+        } else if (diff < 3600000) {
+            val mins = diff / 60000
+            return "Active $mins mins ago"
+        }
+        
+        val sdf = java.text.SimpleDateFormat("hh:mm a", java.util.Locale.US)
+        val timeStr = sdf.format(java.util.Date(timestamp))
+        val daySdf = java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.US)
+        val mDateStr = daySdf.format(java.util.Date(timestamp))
+        val todayStr = daySdf.format(java.util.Date(now))
+        val yesterdayStr = daySdf.format(java.util.Date(now - 24 * 60 * 60 * 1000))
+        
+        return when (mDateStr) {
+            todayStr -> "Today at $timeStr"
+            yesterdayStr -> "Yesterday at $timeStr"
+            else -> "Active on $mDateStr"
+        }
+    } else {
+        if (lastSeen == "online") return "অনলাইন"
+        if (lastSeen == "offline") return "নিষ্ক্রিয়"
+        
+        val timestamp = lastSeen.toLongOrNull() ?: return lastSeen
+        val now = System.currentTimeMillis()
+        val diff = now - timestamp
+        
+        if (diff < 60000) {
+            return "এইমাত্র সক্রিয়"
+        } else if (diff < 3600000) {
+            val mins = diff / 60000
+            val minsBn = toBengaliDigits(mins.toString())
+            return "$minsBn মিনিট আগে সক্রিয়"
+        }
+        
+        val sdf = java.text.SimpleDateFormat("hh:mm a", java.util.Locale.US)
+        val timeStr = sdf.format(java.util.Date(timestamp))
+        
+        var formattedTime = timeStr
+            .replace("AM", "পূর্বাহ্ণ")
+            .replace("PM", "অপরাহ্ণ")
+        
+        formattedTime = toBengaliDigits(formattedTime)
+        
+        val daySdf = java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.US)
+        val mDateStr = daySdf.format(java.util.Date(timestamp))
+        val todayStr = daySdf.format(java.util.Date(now))
+        val yesterdayStr = daySdf.format(java.util.Date(now - 24 * 60 * 60 * 1000))
+        
+        return when (mDateStr) {
+            todayStr -> "আজ $formattedTime এ সক্রিয়"
+            yesterdayStr -> "গতকাল $formattedTime এ সক্রিয়"
+            else -> "${toBengaliDigits(mDateStr)} তারিখে সক্রিয়"
+        }
     }
 }
 
