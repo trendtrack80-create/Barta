@@ -498,6 +498,19 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun uploadAndSendImageMessage(file: java.io.File, onComplete: (Boolean) -> Unit = {}) {
+        viewModelScope.launch {
+            try {
+                val mediaUrl = repository.uploadFileToStorage(file)
+                sendMediaMessage(mediaUrl, "image")
+                onComplete(true)
+            } catch (e: Exception) {
+                android.util.Log.e("BartaChat", "Failed to upload and send image", e)
+                onComplete(false)
+            }
+        }
+    }
+
     fun deleteMessageForMe(msgId: String) {
         viewModelScope.launch {
             repository.deleteMessageForMe(msgId)

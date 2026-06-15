@@ -25,6 +25,7 @@ class ChatRepository(
     private val context: Context
 ) {
     private var firestore: FirebaseFirestore? = null
+    private var firebaseStorage: com.google.firebase.storage.FirebaseStorage? = null
     private var messageListener: ListenerRegistration? = null
     private val activeMessageListeners = HashMap<String, ListenerRegistration>()
     private var globalChatsListener: ListenerRegistration? = null
@@ -53,17 +54,51 @@ class ChatRepository(
                             .build()
                     )
                 firestore = FirebaseFirestore.getInstance(app)
+                firebaseStorage = com.google.firebase.storage.FirebaseStorage.getInstance(app)
                 Log.d("BartaChat", "Firebase initialized successfully programmatically!")
                 true
             } else {
                 Log.d("BartaChat", "Firebase config missing. Using local-only high-fidelity simulator.")
                 firestore = null
+                firebaseStorage = null
                 false
             }
         } catch (e: Exception) {
             Log.e("BartaChat", "Error initializing Firebase programmatically", e)
             firestore = null
+            firebaseStorage = null
             false
+        }
+    }
+
+    suspend fun uploadFileToStorage(file: java.io.File): String = kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
+        val storage = firebaseStorage
+        if (storage != null) {
+            val ref = storage.reference.child("chat_images/${UUID.randomUUID()}.jpg")
+            val uri = android.net.Uri.fromFile(file)
+            ref.putFile(uri)
+                .addOnSuccessListener { taskSnapshot ->
+                    ref.downloadUrl.addOnSuccessListener { downloadUri ->
+                        if (continuation.isActive) {
+                            continuation.resume(downloadUri.toString())
+                        }
+                    }.addOnFailureListener { e ->
+                        if (continuation.isActive) {
+                            continuation.resume(uri.toString())
+                        }
+                    }
+                }
+                .addOnFailureListener { e ->
+                    if (continuation.isActive) {
+                        continuation.resume(uri.toString())
+                    }
+                }
+        } else {
+            // Fallback to local image representation
+            val uriStr = android.net.Uri.fromFile(file).toString()
+            if (continuation.isActive) {
+                continuation.resume(uriStr)
+            }
         }
     }
 

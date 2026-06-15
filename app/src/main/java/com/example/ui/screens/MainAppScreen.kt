@@ -3859,6 +3859,71 @@ fun ChatWindowScreen(
         }
     )
 
+    var tempCameraFile by remember { mutableStateOf<java.io.File?>(null) }
+    var tempCameraUri by remember { mutableStateOf<android.net.Uri?>(null) }
+
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture(),
+        onResult = { success ->
+            if (success) {
+                val file = tempCameraFile
+                if (file != null && file.exists() && file.length() > 0) {
+                    viewModel.uploadAndSendImageMessage(file) { sent ->
+                        if (sent) {
+                            Toast.makeText(context, "ছবি সফলভাবে পাঠানো হয়েছে!", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(context, "ছবি পাঠাতে ব্যর্থ হয়েছে!", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                } else {
+                    Toast.makeText(context, "ছবি ফাইল তৈরি করা যায়নি!", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                Toast.makeText(context, "ছবি ধারণ বাতিল বা ব্যর্থ হয়েছে!", Toast.LENGTH_SHORT).show()
+            }
+        }
+    )
+
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+        onResult = { isGranted ->
+            if (isGranted) {
+                try {
+                    val file = java.io.File(context.cacheDir, "camera_${System.currentTimeMillis()}.jpg")
+                    val uri = androidx.core.content.FileProvider.getUriForFile(context, "com.example.fileprovider", file)
+                    tempCameraFile = file
+                    tempCameraUri = uri
+                    cameraLauncher.launch(uri)
+                } catch (e: Exception) {
+                    Toast.makeText(context, "ক্যামেরা ছবি প্রস্তুত করতে ব্যর্থ হয়েছে!", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                Toast.makeText(context, "ক্যামেরা ব্যবহারের অনুমতি প্রয়োজন!", Toast.LENGTH_SHORT).show()
+            }
+        }
+    )
+
+    val launchCameraFlow: () -> Unit = {
+        val hasCamPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+            context,
+            android.Manifest.permission.CAMERA
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+        if (hasCamPermission) {
+            try {
+                val file = java.io.File(context.cacheDir, "camera_${System.currentTimeMillis()}.jpg")
+                val uri = androidx.core.content.FileProvider.getUriForFile(context, "com.example.fileprovider", file)
+                tempCameraFile = file
+                tempCameraUri = uri
+                cameraLauncher.launch(uri)
+            } catch (e: Exception) {
+                Toast.makeText(context, "ক্যামেরা ছবি প্রস্তুত করতে ব্যর্থ হয়েছে!", Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
+        }
+    }
+
     // Send 'typing...' status to Firestore/Room dynamically as user types
     LaunchedEffect(inputText) {
         viewModel.updateMyTypingStatus(contact.phone, inputText.isNotEmpty())
@@ -4012,6 +4077,28 @@ fun ChatWindowScreen(
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // Camera Attachment action
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .clickable {
+                            showAttachOptions = false
+                            launchCameraFlow()
+                        }
+                        .padding(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(52.dp)
+                            .background(Color(0xFFE3F2FD), shape = CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.PhotoCamera, contentDescription = null, tint = Color(0xFF1E88E5), modifier = Modifier.size(26.dp))
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text("ক্যামেরা", fontSize = 12.sp, color = Color.Black, fontWeight = FontWeight.SemiBold)
+                }
+
                 // Photo Attachment action
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -4223,6 +4310,20 @@ fun ChatWindowScreen(
                         Icon(Icons.Default.PhotoLibrary, contentDescription = null, tint = Color.White)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("গ্যালারি থেকে ছবি পাঠান", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = {
+                            showSelectImageDialog = false
+                            launchCameraFlow()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E88E5)),
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(Icons.Default.PhotoCamera, contentDescription = null, tint = Color.White)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("ক্যামেরা দিয়ে ছবি তুলুন", color = Color.White, fontWeight = FontWeight.Bold)
                     }
                 }
             },
