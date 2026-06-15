@@ -3970,6 +3970,7 @@ fun ChatWindowScreen(
                     message = msg,
                     isMe = isMe,
                     isGroupMsg = contact.isGroup,
+                    isBengali = appLanguage == "bn",
                     onDeleteForMe = { viewModel.deleteMessageForMe(msg.id) },
                     onDeleteForEveryone = { viewModel.deleteMessageForEveryone(msg.id) },
                     onImageClick = { selectedImageForPreview = it },
@@ -4419,6 +4420,7 @@ fun ChatMsgBubble(
     message: Message,
     isMe: Boolean,
     isGroupMsg: Boolean,
+    isBengali: Boolean,
     onDeleteForMe: () -> Unit,
     onDeleteForEveryone: () -> Unit,
     onImageClick: (String) -> Unit,
@@ -4547,8 +4549,18 @@ fun ChatMsgBubble(
                     modifier = Modifier.align(Alignment.End),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    var timeTrigger by remember { mutableStateOf(0L) }
+                    LaunchedEffect(message.timestamp) {
+                        while (true) {
+                            delay(15000)
+                            timeTrigger = System.currentTimeMillis()
+                        }
+                    }
+                    val relativeTime = remember(message.timestamp, isBengali, timeTrigger) {
+                        formatRelativeTime(message.timestamp, isBengali)
+                    }
                     Text(
-                        text = formatTime(message.timestamp),
+                        text = "$relativeTime • ${formatTime(message.timestamp)}",
                         fontSize = 10.sp,
                         color = Color.Gray
                     )
@@ -4679,6 +4691,43 @@ fun formatTime(timestamp: Long): String {
     val date = java.util.Date(timestamp)
     val sdf = java.text.SimpleDateFormat("hh:mm a", java.util.Locale.getDefault())
     return sdf.format(date)
+}
+
+fun formatRelativeTime(timestamp: Long, isBengali: Boolean): String {
+    val diff = System.currentTimeMillis() - timestamp
+    return if (isBengali) {
+        when {
+            diff < 0 -> "এইমাত্র"
+            diff < 60000 -> "এইমাত্র"
+            diff < 3600000 -> "${toBengaliDigits((diff / 60000).toString())}মি আগে"
+            diff < 86400000 -> "${toBengaliDigits((diff / 3600000).toString())}ঘণ্টা আগে"
+            else -> {
+                val days = diff / 86400000
+                if (days < 7) {
+                    "${toBengaliDigits(days.toString())}দিন আগে"
+                } else {
+                    val sdf = java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.getDefault())
+                    toBengaliDigits(sdf.format(java.util.Date(timestamp)))
+                }
+            }
+        }
+    } else {
+        when {
+            diff < 0 -> "Just now"
+            diff < 60000 -> "Just now"
+            diff < 3600000 -> "${diff / 60000}m ago"
+            diff < 86400000 -> "${diff / 3600000}h ago"
+            else -> {
+                val days = diff / 86400000
+                if (days < 7) {
+                    "${days}d ago"
+                } else {
+                    val sdf = java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.getDefault())
+                    sdf.format(java.util.Date(timestamp))
+                }
+            }
+        }
+    }
 }
 
 @Composable
