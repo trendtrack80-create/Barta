@@ -53,6 +53,9 @@ interface MessageDao {
     @Query("UPDATE messages SET isDeletedForEveryone = 1 WHERE id = :msgId")
     suspend fun markDeletedForEveryone(msgId: String)
 
+    @Query("UPDATE messages SET text = :text, isEdited = 1 WHERE id = :msgId")
+    suspend fun updateMessageText(msgId: String, text: String)
+
     @Query("SELECT * FROM messages WHERE id = :msgId LIMIT 1")
     suspend fun getMessageById(msgId: String): Message?
 }

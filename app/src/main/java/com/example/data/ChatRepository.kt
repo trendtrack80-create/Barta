@@ -328,6 +328,40 @@ class ChatRepository(
         }
     }
 
+    suspend fun editMessage(myNumber: String, peerNumber: String, msgId: String, newText: String) {
+        messageDao.updateMessageText(msgId, newText)
+        val lastMsgText = newText
+        contactDao.updateLastMessage(peerNumber, lastMsgText, System.currentTimeMillis())
+
+        firestore?.let { db ->
+            val chatId = getChatId(myNumber, peerNumber)
+            val updates = hashMapOf<String, Any>(
+                "text" to newText.trim(),
+                "isEdited" to true
+            )
+            db.collection("chats")
+                .document(chatId)
+                .collection("messages")
+                .document(msgId)
+                .update(updates)
+                .addOnSuccessListener {
+                    Log.d("BartaChat", "Message edited successfully in Firestore")
+                }
+                .addOnFailureListener { e ->
+                    Log.e("BartaChat", "Failed to edit message in Firestore", e)
+                }
+
+            val chatMeta = hashMapOf<String, Any>(
+                "lastMessageText" to lastMsgText,
+                "lastMessageTime" to System.currentTimeMillis(),
+                "lastSender" to myNumber
+            )
+            db.collection("chats")
+                .document(chatId)
+                .set(chatMeta, com.google.firebase.firestore.SetOptions.merge())
+        }
+    }
+
     private var groupsListener: ListenerRegistration? = null
 
     fun startListeningToGroups(myNumber: String, onGroupUpdated: () -> Unit) {
@@ -428,6 +462,7 @@ class ChatRepository(
                             val mediaUrl = data["mediaUrl"] as? String ?: ""
                             val mediaType = data["mediaType"] as? String ?: ""
                             val isDeletedForEveryone = data["isDeletedForEveryone"] as? Boolean ?: false
+                            val isEdited = data["isEdited"] as? Boolean ?: false
 
                             if (id.isNotEmpty()) {
                                 val message = Message(
@@ -440,7 +475,8 @@ class ChatRepository(
                                     senderName = senderName,
                                     mediaUrl = mediaUrl.ifEmpty { null },
                                     mediaType = mediaType.ifEmpty { null },
-                                    isDeletedForEveryone = isDeletedForEveryone
+                                    isDeletedForEveryone = isDeletedForEveryone,
+                                    isEdited = isEdited
                                 )
                                 messageDao.insertMessage(message)
                                 
@@ -503,6 +539,7 @@ class ChatRepository(
                             val mediaUrl = data["mediaUrl"] as? String ?: ""
                             val mediaType = data["mediaType"] as? String ?: ""
                             val isDeletedForEveryone = data["isDeletedForEveryone"] as? Boolean ?: false
+                            val isEdited = data["isEdited"] as? Boolean ?: false
 
                             if (id.isNotEmpty()) {
                                 val message = Message(
@@ -515,7 +552,8 @@ class ChatRepository(
                                     senderName = senderName,
                                     mediaUrl = mediaUrl.ifEmpty { null },
                                     mediaType = mediaType.ifEmpty { null },
-                                    isDeletedForEveryone = isDeletedForEveryone
+                                    isDeletedForEveryone = isDeletedForEveryone,
+                                    isEdited = isEdited
                                 )
                                 messageDao.insertMessage(message)
 

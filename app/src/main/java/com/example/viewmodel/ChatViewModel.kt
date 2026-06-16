@@ -525,6 +525,14 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun editMessage(msgId: String, newText: String) {
+        val me = _myNumber.value ?: return
+        val active = _activeContact.value ?: return
+        viewModelScope.launch {
+            repository.editMessage(me, active.phone, msgId, newText)
+        }
+    }
+
     fun loadFirebaseConfig() {
         val config = repository.getFirebaseConfig()
         firebaseApiKey.value = config.first

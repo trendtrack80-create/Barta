@@ -4038,6 +4038,7 @@ fun ChatWindowScreen(
                     isBengali = appLanguage == "bn",
                     onDeleteForMe = { viewModel.deleteMessageForMe(msg.id) },
                     onDeleteForEveryone = { viewModel.deleteMessageForEveryone(msg.id) },
+                    onEditMessage = { msgId, editedTxt -> viewModel.editMessage(msgId, editedTxt) },
                     onImageClick = { selectedImageForPreview = it },
                     onVideoClick = { selectedVideoForPlayback = it }
                 )
@@ -4524,6 +4525,7 @@ fun ChatMsgBubble(
     isBengali: Boolean,
     onDeleteForMe: () -> Unit,
     onDeleteForEveryone: () -> Unit,
+    onEditMessage: (String, String) -> Unit,
     onImageClick: (String) -> Unit,
     onVideoClick: (String) -> Unit
 ) {
@@ -4536,6 +4538,13 @@ fun ChatMsgBubble(
     }
 
     var showDeleteConfirmationDialog by remember { mutableStateOf(false) }
+    var showEditDialog by remember { mutableStateOf(false) }
+    var editedTextState by remember { mutableStateOf(message.text) }
+
+    // Keep edited text state updated if message text changes from Firestore
+    LaunchedEffect(message.text) {
+        editedTextState = message.text
+    }
 
     Box(
         modifier = Modifier
@@ -4637,11 +4646,22 @@ fun ChatMsgBubble(
                     }
 
                     // Standard text display
-                    Text(
-                        text = message.text,
-                        fontSize = 15.sp,
-                        color = Color.Black
-                    )
+                    Column {
+                        Text(
+                            text = message.text,
+                            fontSize = 15.sp,
+                            color = Color.Black
+                        )
+                        if (message.isEdited) {
+                            Text(
+                                text = if (isBengali) "সংশোধিত" else "edited",
+                                fontSize = 10.sp,
+                                color = Color.Gray,
+                                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                                modifier = Modifier.padding(top = 1.dp)
+                            )
+                        }
+                    }
                 }
                 
                 Spacer(modifier = Modifier.height(2.dp))
@@ -4717,6 +4737,20 @@ fun ChatMsgBubble(
                         }
                     }
 
+                    // Option 3: Edit Message (Only sender has edit constraints, only for text messages)
+                    if (isMe && !message.isDeletedForEveryone && message.mediaType == null) {
+                        Button(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = {
+                                showDeleteConfirmationDialog = false
+                                showEditDialog = true
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E88E5))
+                        ) {
+                            Text("বার্তা সংশোধন করুন (Edit Message)", color = Color.White)
+                        }
+                    }
+
                     // Cancel option
                     OutlinedButton(
                         modifier = Modifier.fillMaxWidth(),
@@ -4724,6 +4758,44 @@ fun ChatMsgBubble(
                     ) {
                         Text("বাতিল করুন")
                     }
+                }
+            }
+        )
+    }
+
+    if (showEditDialog) {
+        AlertDialog(
+            onDismissRequest = { showEditDialog = false },
+            title = { Text("বার্তা সংশোধন করুন", fontWeight = FontWeight.Bold, color = WhatsAppTealVal) },
+            text = {
+                Column {
+                    Text("আপনার বার্তাটি সংশোধন করে নিচের বক্সে লিখুন:", fontSize = 12.sp, color = Color.Gray)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = editedTextState,
+                        onValueChange = { editedTextState = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = false,
+                        maxLines = 4
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (editedTextState.trim().isNotEmpty()) {
+                            onEditMessage(message.id, editedTextState)
+                        }
+                        showEditDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = WhatsAppTealVal)
+                ) {
+                    Text("সংরক্ষণ করুন", color = Color.White)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showEditDialog = false }) {
+                    Text("বাতিল")
                 }
             }
         )
