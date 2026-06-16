@@ -1195,6 +1195,7 @@ fun ChatsTabScreen(
     val searchVal by viewModel.searchQuery.collectAsStateWithLifecycle()
     val myPhone by viewModel.myNumber.collectAsStateWithLifecycle()
     val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
+    val txt = getTranslator(viewModel = viewModel)
 
     // Filter out group chats for individual conversations
     val individualChats = remember(contactsList) { contactsList.filter { !it.isGroup } }
@@ -1210,7 +1211,7 @@ fun ChatsTabScreen(
             title = {
                 Column {
                     Text(
-                        text = "বার্তা (Chat)",
+                        text = txt("বার্তা", "Chat"),
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
                         fontSize = 18.sp
@@ -1229,7 +1230,7 @@ fun ChatsTabScreen(
         OutlinedTextField(
             value = searchVal,
             onValueChange = { viewModel.searchQuery.value = it },
-            placeholder = { Text("নাম অথবা মোবাইল দিয়ে সার্চ করুন...", color = Color.Gray) },
+            placeholder = { Text(txt("নাম অথবা মোবাইল দিয়ে সার্চ করুন...", "Search by name or mobile..."), color = Color.Gray) },
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.Gray) },
             trailingIcon = {
                 if (searchVal.isNotEmpty()) {
@@ -1264,7 +1265,7 @@ fun ChatsTabScreen(
             if (searchVal.isNotEmpty() && searchedGlobalUsers.isNotEmpty()) {
                 item {
                     Text(
-                        text = "সার্চ করা অন্যান্য ব্যবহারকারীরা (অনলাইন):",
+                        text = txt("সার্চ করা অন্যান্য ব্যবহারকারীরা (অনলাইন):", "Other Searched Users (Online):"),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         color = WhatsAppTealVal,
@@ -1298,7 +1299,7 @@ fun ChatsTabScreen(
                             Text(user.phone, fontSize = 12.sp, color = Color.LightGray)
                         }
                         Spacer(modifier = Modifier.weight(1f))
-                        Text("মেসেজ দিন ➡️", color = WhatsAppGreenVal, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(txt("মেসেজ দিন ➡️", "Message ➡️"), color = WhatsAppGreenVal, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                     HorizontalDivider(color = Color(0xFF202C33))
                 }
@@ -1310,7 +1311,7 @@ fun ChatsTabScreen(
             if (individualChats.isNotEmpty()) {
                 item {
                     Text(
-                        text = "আমার চ্যাটসমূহ (Active Chats):",
+                        text = txt("আমার চ্যাটসমূহ (Active Chats):", "My Chats (Active Chats):"),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.Gray,
@@ -1347,7 +1348,7 @@ fun ChatsTabScreen(
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "কোনো চ্যাট পাওয়া যায়নি",
+                                text = txt("কোনো চ্যাট পাওয়া যায়নি", "No chats found"),
                                 color = Color.Gray,
                                 fontSize = 14.sp
                             )
@@ -1369,6 +1370,7 @@ fun GroupsTabScreen(
     val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
     val searchVal by viewModel.searchQuery.collectAsStateWithLifecycle()
     val myPhone by viewModel.myNumber.collectAsStateWithLifecycle()
+    val txt = getTranslator(viewModel = viewModel)
 
     val groupChats = remember(contactsList) { contactsList.filter { it.isGroup } }
 
@@ -1381,7 +1383,7 @@ fun GroupsTabScreen(
                 containerColor = WhatsAppTealVal,
                 contentColor = Color.White,
                 icon = { Icon(Icons.Default.Groups, contentDescription = "Create Group") },
-                text = { Text("নতুন গ্রুপ") },
+                text = { Text(txt("নতুন গ্রুপ", "New Group")) },
                 modifier = Modifier.testTag("create_group_fab")
             )
         }
@@ -1396,7 +1398,7 @@ fun GroupsTabScreen(
                 title = {
                     Column {
                         Text(
-                            text = "গ্রুপ চ্যাট (Groups)",
+                            text = txt("গ্রুপ চ্যাট", "Group Chats"),
                             fontWeight = FontWeight.Bold,
                             color = Color.White,
                             fontSize = 18.sp
@@ -1415,7 +1417,7 @@ fun GroupsTabScreen(
             OutlinedTextField(
                 value = searchVal,
                 onValueChange = { viewModel.searchQuery.value = it },
-                placeholder = { Text("গ্রুপ নাম দিয়ে সার্চ করুন...", color = Color.Gray) },
+                placeholder = { Text(txt("গ্রুপ নাম দিয়ে সার্চ করুন...", "Search groups by name..."), color = Color.Gray) },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.Gray) },
                 trailingIcon = {
                     if (searchVal.isNotEmpty()) {
@@ -1449,7 +1451,7 @@ fun GroupsTabScreen(
                 if (groupChats.isNotEmpty()) {
                     item {
                         Text(
-                            text = "আমার গ্রুপসমূহ (My Groups):",
+                            text = txt("আমার গ্রুপসমূহ (My Groups):", "My Groups (My Groups):"),
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color.Gray,
@@ -1486,7 +1488,7 @@ fun GroupsTabScreen(
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text(
-                                    text = "কোনো গ্রুপ চ্যাট পাওয়া যায়নি",
+                                    text = txt("কোনো গ্রুপ চ্যাট পাওয়া যায়নি", "No group chats found"),
                                     color = Color.Gray,
                                     fontSize = 14.sp
                                 )
@@ -1521,6 +1523,8 @@ fun StatusTabScreen(
     val myName = viewModel.userDisplayName.value
     val myProfilePic = viewModel.userProfilePicBase64.value
     val context = LocalContext.current
+    val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
+    val txt = getTranslator(viewModel = viewModel)
 
     // Group statuses by phone
     val groupedStatuses = activeStatuses.groupBy { it.phone }
@@ -1554,7 +1558,7 @@ fun StatusTabScreen(
                 if (localPath != null) {
                     showAddPhotoStatusDialog = localPath
                 } else {
-                    Toast.makeText(context, "ছবি লোড করতে সমস্যা হয়েছে!", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, if (appLanguage == "bn") "ছবি লোড করতে সমস্যা হয়েছে!" else "Failed to load photo!", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -1567,11 +1571,17 @@ fun StatusTabScreen(
     fun formatTimeAgo(time: Long): String {
         val diff = System.currentTimeMillis() - time
         return when {
-            diff < 0 -> "এইমাত্র"
-            diff < 60000 -> "এইমাত্র"
-            diff < 3600000 -> "${diff / 60000} মিনিট আগে"
-            diff < 86400000 -> "${diff / 3600000} ঘণ্টা আগে"
-            else -> "১ দিন আগে"
+            diff < 0 -> if (appLanguage == "bn") "এইমাত্র" else "just now"
+            diff < 60000 -> if (appLanguage == "bn") "এইমাত্র" else "just now"
+            diff < 3600000 -> {
+                val mins = diff / 60000
+                if (appLanguage == "bn") "$mins মিনিট আগে" else "$mins mins ago"
+            }
+            diff < 86400000 -> {
+                val hrs = diff / 3600000
+                if (appLanguage == "bn") "$hrs ঘণ্টা আগে" else "$hrs hours ago"
+            }
+            else -> if (appLanguage == "bn") "১ দিন আগে" else "1 day ago"
         }
     }
 
@@ -1617,7 +1627,7 @@ fun StatusTabScreen(
                 title = {
                     Column {
                         Text(
-                            text = "স্ট্যাটাস (Status)",
+                            text = txt("স্ট্যাটাস", "Status"),
                             fontWeight = FontWeight.Bold,
                             color = Color.White,
                             fontSize = 18.sp
@@ -1683,12 +1693,17 @@ fun StatusTabScreen(
                     Spacer(modifier = Modifier.width(14.dp))
 
                     Column {
-                        Text("আমার স্ট্যাটাস", fontWeight = FontWeight.Bold, color = Color.Black, fontSize = 16.sp)
+                        Text(txt("আমার স্ট্যাটাস", "My Status"), fontWeight = FontWeight.Bold, color = Color.Black, fontSize = 16.sp)
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = if (myStatuses.isEmpty()) "স্ট্যাটাস আপডেট করতে টাচ করুন" else {
+                            text = if (myStatuses.isEmpty()) txt("স্ট্যাটাস আপডেট করতে টাচ করুন", "Tap to add status update") else {
                                 val latest = myStatuses.maxBy { it.timestamp }
-                                if (!latest.mediaUrl.isNullOrEmpty()) "📷 ফটো আপডেট • ${formatTimeAgo(latest.timestamp)}" else "${latest.text} • ${formatTimeAgo(latest.timestamp)}"
+                                if (!latest.mediaUrl.isNullOrEmpty()) {
+                                    val actType = if (appLanguage == "bn") "📷 ফটো আপডেট • " else "📷 Photo update • "
+                                    actType + formatTimeAgo(latest.timestamp)
+                                } else {
+                                    "${latest.text} • ${formatTimeAgo(latest.timestamp)}"
+                                }
                             },
                             color = Color.Gray,
                             fontSize = 13.sp,
@@ -1701,7 +1716,7 @@ fun StatusTabScreen(
 
             // Section 2: Recent updates
             Text(
-                text = "সাম্প্রতিক আপডেটসমূহ (Recent Updates):",
+                text = txt("সাম্প্রতিক আপডেটসমূহ (Recent Updates):", "Recent Updates (Recent Updates):"),
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.Gray,
@@ -1719,7 +1734,7 @@ fun StatusTabScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "কোনো সাম্প্রতিক স্ট্যাটাস আপডেট নেই",
+                            text = txt("কোনো সাম্প্রতিক স্ট্যাটাস আপডেট নেই", "No recent status updates"),
                             color = Color.Gray,
                             fontSize = 14.sp
                         )
@@ -1759,7 +1774,10 @@ fun StatusTabScreen(
                                     Text(latestStatus.name, fontWeight = FontWeight.Bold, color = Color.Black, fontSize = 15.sp)
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Text(
-                                        text = if (!latestStatus.mediaUrl.isNullOrEmpty()) "📷 ফটো আপডেট • ${formatTimeAgo(latestStatus.timestamp)}" else latestStatus.text,
+                                        text = if (!latestStatus.mediaUrl.isNullOrEmpty()) {
+                                            val actType = if (appLanguage == "bn") "📷 ফটো আপডেট • " else "📷 Photo update • "
+                                            actType + formatTimeAgo(latestStatus.timestamp)
+                                        } else latestStatus.text,
                                         color = Color.Gray,
                                         fontSize = 12.sp,
                                         maxLines = 1,
@@ -1789,19 +1807,19 @@ fun StatusTabScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("টেক্সট স্ট্যাটাস দিন", fontWeight = FontWeight.Bold, color = WhatsAppTealVal)
+                    Text(txt("টেক্সট স্ট্যাটাস দিন", "Write Text Status"), fontWeight = FontWeight.Bold, color = WhatsAppTealVal)
                     IconButton(
                         onClick = {
                             selectedBgColorIndex = (selectedBgColorIndex + 1) % bgColors.size
                         }
                     ) {
-                        Icon(Icons.Default.ColorLens, contentDescription = "রং পরিবর্তন", tint = WhatsAppTealVal)
+                        Icon(Icons.Default.ColorLens, contentDescription = txt("রং পরিবর্তন", "Change Background Color"), tint = WhatsAppTealVal)
                     }
                 }
             },
             text = {
                 Column {
-                    Text("আপনার মনের চমৎকার কথাটি টাইপ করুনঃ", fontSize = 12.sp, color = Color.Gray)
+                    Text(txt("আপনার মনের চমৎকার কথাটি টাইপ করুনঃ", "Type your wonderful thoughts:"), fontSize = 12.sp, color = Color.Gray)
                     Spacer(modifier = Modifier.height(12.dp))
                     Box(
                         modifier = Modifier
@@ -1824,7 +1842,7 @@ fun StatusTabScreen(
                         )
                         if (textStatusInputText.isEmpty()) {
                             Text(
-                                text = "এখানে লিখুন...",
+                                text = txt("এখানে লিখুন...", "Write here..."),
                                 color = Color.White.copy(alpha = 0.6f),
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.Bold,
@@ -1845,19 +1863,19 @@ fun StatusTabScreen(
                             )
                             textStatusInputText = ""
                             showAddTextStatusDialog = false
-                            Toast.makeText(context, "টেক্সট স্ট্যাটাস আপডেট সম্পন্ন হয়েছে!", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, txt("টেক্সট স্ট্যাটাস আপডেট সম্পন্ন হয়েছে!", "Text status updated successfully!"), Toast.LENGTH_SHORT).show()
                         } else {
-                            Toast.makeText(context, "দয়া করে কিছু লিখুন!", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, txt("দয়া করে কিছু লিখুন!", "Please type something first!"), Toast.LENGTH_SHORT).show()
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = WhatsAppTealVal)
                 ) {
-                    Text("আপডেট", color = Color.White)
+                    Text(txt("আপডেট", "Update"), color = Color.White)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showAddTextStatusDialog = false }) {
-                    Text("বাতিল", color = Color.Red)
+                    Text(txt("বাতিল", "Cancel"), color = Color.Red)
                 }
             }
         )
@@ -1867,7 +1885,7 @@ fun StatusTabScreen(
     showAddPhotoStatusDialog?.let { localPath ->
         AlertDialog(
             onDismissRequest = { showAddPhotoStatusDialog = null },
-            title = { Text("ফটো স্ট্যাটাস দিন", fontWeight = FontWeight.Bold, color = WhatsAppTealVal) },
+            title = { Text(txt("ফটো স্ট্যাটাস দিন", "Add Photo Status"), fontWeight = FontWeight.Bold, color = WhatsAppTealVal) },
             text = {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Box(
@@ -1890,7 +1908,7 @@ fun StatusTabScreen(
                         value = photoStatusInputText,
                         onValueChange = { photoStatusInputText = it },
                         modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("ক্যাপশন যোগ করুন (ঐচ্ছিক)...") },
+                        placeholder = { Text(txt("ক্যাপশন যোগ করুন (ঐচ্ছিক)...", "Add caption (optional)...")) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color.Black,
                             unfocusedTextColor = Color.Black,
@@ -1909,16 +1927,16 @@ fun StatusTabScreen(
                         )
                         photoStatusInputText = ""
                         showAddPhotoStatusDialog = null
-                        Toast.makeText(context, "ফটো স্ট্যাটাস আপডেট সম্পন্ন হয়েছে!", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, txt("ফটো স্ট্যাটাস আপডেট সম্পন্ন হয়েছে!", "Photo status updated successfully!"), Toast.LENGTH_SHORT).show()
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = WhatsAppTealVal)
                 ) {
-                    Text("আপডেট", color = Color.White)
+                    Text(txt("আপডেট", "Update"), color = Color.White)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showAddPhotoStatusDialog = null }) {
-                    Text("বাতিল", color = Color.Red)
+                    Text(txt("বাতিল", "Cancel"), color = Color.Red)
                 }
             }
         )
@@ -1928,7 +1946,7 @@ fun StatusTabScreen(
     if (showPostChooserDialog) {
         AlertDialog(
             onDismissRequest = { showPostChooserDialog = false },
-            title = { Text("স্ট্যাটাস আপডেট ধরন", fontWeight = FontWeight.Bold, color = WhatsAppTealVal) },
+            title = { Text(txt("স্ট্যাটাস আপডেট ধরন", "Choose Status Type"), fontWeight = FontWeight.Bold, color = WhatsAppTealVal) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Button(
@@ -1941,7 +1959,7 @@ fun StatusTabScreen(
                     ) {
                         Icon(Icons.Default.Edit, contentDescription = null, tint = Color.White)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("মন দিয়ে কিছু লিখুন (Text Status)", color = Color.White)
+                        Text(txt("মন দিয়ে কিছু লিখুন (Text Status)", "Write status text (Text Status)"), color = Color.White)
                     }
 
                     Button(
@@ -1956,13 +1974,13 @@ fun StatusTabScreen(
                     ) {
                         Icon(Icons.Default.CameraAlt, contentDescription = null, tint = Color.White)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("ছবি শেয়ার করুন (Photo Status)", color = Color.White)
+                        Text(txt("ছবি শেয়ার করুন (Photo Status)", "Share Photo (Photo Status)"), color = Color.White)
                     }
                 }
             },
             confirmButton = {
                 TextButton(onClick = { showPostChooserDialog = false }) {
-                    Text("বাতিল", color = Color.Gray)
+                    Text(txt("বাতিল", "Cancel"), color = Color.Gray)
                 }
             }
         )
@@ -3109,13 +3127,18 @@ fun CreateGroupDialog(
     onDismiss: () -> Unit,
     onConfirm: (groupName: String, selected: List<Contact>) -> Unit
 ) {
+    val context = LocalContext.current
+    val sharedPrefs = remember(context) { context.getSharedPreferences("MainPrefs", android.content.Context.MODE_PRIVATE) }
+    val isBn = remember { sharedPrefs.getString("app_language", "bn") == "bn" }
+    fun txt(bn: String, en: String) = if (isBn) bn else en
+
     var groupName by remember { mutableStateOf("") }
     val selectedContacts = remember { mutableStateListOf<Contact>() }
     var hasError by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("নতুন গ্রুপ চ্যাট খুলুন", fontWeight = FontWeight.Bold, color = WhatsAppTealVal) },
+        title = { Text(txt("নতুন গ্রুপ চ্যাট খুলুন", "Create New Group Chat"), fontWeight = FontWeight.Bold, color = WhatsAppTealVal) },
         text = {
             Column(modifier = Modifier.fillMaxWidth()) {
                 OutlinedTextField(
@@ -3124,8 +3147,8 @@ fun CreateGroupDialog(
                         groupName = it
                         hasError = false
                     },
-                    label = { Text("গ্রুপের নাম") },
-                    placeholder = { Text("যেমন: বন্ধুদের আড্ডা") },
+                    label = { Text(txt("গ্রুপের নাম", "Group Name")) },
+                    placeholder = { Text(txt("যেমন: বন্ধুদের আড্ডা", "e.g., Friends Corner")) },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = Color.White,
@@ -3136,11 +3159,11 @@ fun CreateGroupDialog(
                 )
 
                 if (hasError) {
-                    Text("গ্রুপের নাম অবশ্যই দিতে হবে!", color = Color.Red, fontSize = 11.sp)
+                    Text(txt("গ্রুপের নাম অবশ্যই দিতে হবে!", "Group name is required!"), color = Color.Red, fontSize = 11.sp)
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
-                Text("সদস্য যুক্ত করুন (পছন্দ করুন):", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.Gray)
+                Text(txt("সদস্য যুক্ত করুন (পছন্দ করুন):", "Select members to add:"), fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.Gray)
                 Spacer(modifier = Modifier.height(8.dp))
 
                 LazyColumn(modifier = Modifier.height(180.dp)) {
@@ -3182,12 +3205,12 @@ fun CreateGroupDialog(
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = WhatsAppGreenVal)
             ) {
-                Text("তৈরি করুন", color = Color.White)
+                Text(txt("তৈরি করুন", "Create"), color = Color.White)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("বাতিল", color = Color.Gray)
+                Text(txt("বাতিল", "Cancel"), color = Color.Gray)
             }
         }
     )
@@ -3198,6 +3221,11 @@ fun AddContactDialog(
     onDismiss: () -> Unit,
     onConfirm: (name: String, phone: String, simulateReply: Boolean) -> Unit
 ) {
+    val context = LocalContext.current
+    val sharedPrefs = remember(context) { context.getSharedPreferences("MainPrefs", android.content.Context.MODE_PRIVATE) }
+    val isBn = remember { sharedPrefs.getString("app_language", "bn") == "bn" }
+    fun txt(bn: String, en: String) = if (isBn) bn else en
+
     var contactName by remember { mutableStateOf("") }
     var contactPhone by remember { mutableStateOf("") }
     var autoReplySim by remember { mutableStateOf(true) }
@@ -3205,14 +3233,14 @@ fun AddContactDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("নতুন পরিচিতি যোগ করুন") },
+        title = { Text(txt("নতুন পরিচিতি যোগ করুন", "Add New Contact")) },
         text = {
             Column {
                 OutlinedTextField(
                     value = contactName,
                     onValueChange = { contactName = it },
-                    label = { Text("নাম") },
-                    placeholder = { Text("সাকিব চৌধুরী") },
+                    label = { Text(txt("নাম", "Name")) },
+                    placeholder = { Text(txt("সাকিব চৌধুরী", "Sakib Chowdhury")) },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = Color.White,
@@ -3233,7 +3261,7 @@ fun AddContactDialog(
                         contactPhone = it.filter { ch -> ch.isDigit() }
                         hasError = false
                     },
-                    label = { Text("মোবাইল নাম্বার") },
+                    label = { Text(txt("মোবাইল নাম্বার", "Mobile Number")) },
                     placeholder = { Text("01XXXXXXXXX") },
                     prefix = { Text("+88 ") },
                     singleLine = true,
@@ -3255,7 +3283,7 @@ fun AddContactDialog(
 
                 if (hasError) {
                     Text(
-                        text = "১১ ডিজিটের সঠিক বাংলাদেশ মোবাইল নাম্বার দিন!",
+                        text = txt("১১ ডিজিটের সঠিক বাংলাদেশ মোবাইল নাম্বার দিন!", "Enter a valid 11-digit Bangladeshi mobile number!"),
                         color = Color.Red,
                         fontSize = 12.sp,
                         modifier = Modifier.padding(top = 4.dp)
@@ -3273,7 +3301,7 @@ fun AddContactDialog(
                         onCheckedChange = { autoReplySim = it }
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("অনলাইন উত্তরদাতা ও বট সিমুলেশন সচল রাখুন।", fontSize = 12.sp)
+                    Text(txt("অনলাইন উত্তরদাতা ও বট সিমুলেশন সচল রাখুন।", "Enable online auto-responder and bot simulation."), fontSize = 12.sp)
                 }
             }
         },
@@ -3290,12 +3318,12 @@ fun AddContactDialog(
                 colors = ButtonDefaults.buttonColors(containerColor = WhatsAppGreenVal),
                 modifier = Modifier.testTag("dialog_confirm_button")
             ) {
-                Text("যোগ করুন", color = Color.White)
+                Text(txt("যোগ করুন", "Add Contact"), color = Color.White)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("বাতিল করুন", color = Color.Gray)
+                Text(txt("বাতিল করুন", "Cancel"), color = Color.Gray)
             }
         }
     )
@@ -3307,6 +3335,10 @@ fun SyncContactsDialog(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    val sharedPrefs = remember(context) { context.getSharedPreferences("MainPrefs", android.content.Context.MODE_PRIVATE) }
+    val isBn = remember { sharedPrefs.getString("app_language", "bn") == "bn" }
+    fun txt(bn: String, en: String) = if (isBn) bn else en
+
     val syncedContacts by viewModel.syncedContacts.collectAsStateWithLifecycle()
     val isSyncing by viewModel.isSyncing.collectAsStateWithLifecycle()
     var syncTriggered by remember { mutableStateOf(false) }
@@ -3323,9 +3355,9 @@ fun SyncContactsDialog(
         val contacts = getDeviceContactsNatively(context, firebaseUsersList)
         viewModel.syncContacts(contacts)
         if (isGranted) {
-            Toast.makeText(context, "কন্ট্যাক্ট পড়ার অনুমতি পাওয়া গেছে!", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, txt("কন্ট্যাক্ট পড়ার অনুমতি পাওয়া গেছে!", "Contacts read permission granted!"), Toast.LENGTH_SHORT).show()
         } else {
-            Toast.makeText(context, "কন্ট্যাক্ট পারমিশন না দেওয়ায় ডেমো কন্ট্যাক্ট দিয়ে তুলনা করা হচ্ছে।", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, txt("কন্ট্যাক্ট পারমিশন না দেওয়ায় ডেমো কন্ট্যাক্ট দিয়ে তুলনা করা হচ্ছে।", "Comparing with demo contacts as contact permission was denied."), Toast.LENGTH_LONG).show()
         }
     }
 
@@ -3334,19 +3366,19 @@ fun SyncContactsDialog(
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    imageVector = Icons.Default.Sync,
-                    contentDescription = null,
-                    tint = WhatsAppTealVal,
-                    modifier = Modifier.size(28.dp)
+                     imageVector = Icons.Default.Sync,
+                     contentDescription = null,
+                     tint = WhatsAppTealVal,
+                     modifier = Modifier.size(28.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("কন্ট্যাক্ট সিঙ্ক (সমলয়)", color = Color.White, fontWeight = FontWeight.Bold)
+                Text(txt("কন্ট্যাক্ট সিঙ্ক (সমলয়)", "Sync Contacts"), color = Color.White, fontWeight = FontWeight.Bold)
             }
         },
         text = {
             Column(modifier = Modifier.fillMaxWidth()) {
                 Text(
-                    text = "আপনার ফোনের কন্ট্যাক্ট তালিকা মিলিয়ে দেখুন এবং আপনার পরিচিত কে কে 'বার্তা' অ্যাপ ব্যবহার করছেন তা সরাসরি চ্যাট তালিকায় যুক্ত করুন।",
+                    text = txt("আপনার ফোনের কন্ট্যাক্ট তালিকা মিলিয়ে দেখুন এবং আপনার পরিচিত কে কে 'বার্তা' অ্যাপ ব্যবহার করছেন তা সরাসরি চ্যাট তালিকায় যুক্ত করুন।", "Match your phone contact list and directly add acquaintances who use 'Barta' app to your chat list."),
                     color = Color.LightGray,
                     fontSize = 14.sp,
                     lineHeight = 20.sp
@@ -3380,7 +3412,7 @@ fun SyncContactsDialog(
                         ) {
                             Icon(imageVector = Icons.Default.Contacts, contentDescription = null, tint = Color.White)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("সিঙ্ক আরম্ভ করুন", fontWeight = FontWeight.Bold, color = Color.White)
+                            Text(txt("সিঙ্ক আরম্ভ করুন", "Start Sync"), fontWeight = FontWeight.Bold, color = Color.White)
                         }
                     }
                 } else {
@@ -3391,7 +3423,7 @@ fun SyncContactsDialog(
                         ) {
                             CircularProgressIndicator(color = WhatsAppTealVal, modifier = Modifier.size(36.dp))
                             Spacer(modifier = Modifier.height(12.dp))
-                            Text("সিঙ্ক করা হচ্ছে, অনুগ্রহ করে অপেক্ষা করুন...", color = Color.Gray, fontSize = 13.sp)
+                            Text(txt("সিঙ্ক করা হচ্ছে, অনুগ্রহ করে অপেক্ষা করুন...", "Syncing, please wait..."), color = Color.Gray, fontSize = 13.sp)
                         }
                     } else {
                         if (syncedContacts.isEmpty()) {
@@ -3399,11 +3431,11 @@ fun SyncContactsDialog(
                                 modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text("কোনো কন্ট্যাক্ট পাওয়া যায়নি যারা অ্যাপ ব্যবহার করছেন!", color = Color.Gray, fontSize = 14.sp)
+                                Text(txt("কোনো কন্ট্যাক্ট পাওয়া যায়নি যারা অ্যাপ ব্যবহার করছেন!", "No contacts found using Barta!"), color = Color.Gray, fontSize = 14.sp)
                             }
                         } else {
                             Text(
-                                text = "বার্তা ব্যবহারকারী পাওয়া গেছে (${syncedContacts.size} জন):",
+                                text = txt("বার্তা ব্যবহারকারী পাওয়া গেছে (${syncedContacts.size} জন):", "Barta users found (${syncedContacts.size} users):"),
                                 color = WhatsAppGreenVal,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.SemiBold,
@@ -3454,7 +3486,7 @@ fun SyncContactsDialog(
                                                     shape = RoundedCornerShape(16.dp),
                                                     modifier = Modifier.height(30.dp)
                                                 ) {
-                                                    Text("যুক্ত করুন", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                    Text(txt("যুক্ত করুন", "Add"), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                                 }
                                             }
                                         }
@@ -3468,7 +3500,7 @@ fun SyncContactsDialog(
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("বন্ধ করুন", color = WhatsAppTealVal, fontWeight = FontWeight.Bold)
+                Text(txt("বন্ধ করুন", "Close"), color = WhatsAppTealVal, fontWeight = FontWeight.Bold)
             }
         }
     )
@@ -4700,11 +4732,13 @@ fun ChatMsgBubble(
     }
 
     // Interactive message deletion selection sheet dialog
+    val txt = { bn: String, en: String -> if (isBengali) bn else en }
+
     if (showDeleteConfirmationDialog) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirmationDialog = false },
-            title = { Text("বার্তা সংশোধন বা মুছুন", fontWeight = FontWeight.Bold, color = WhatsAppTealVal) },
-            text = { Text("বার্তাটির নিরাপত্তা নিশ্চিতকরণঃ দয়া করে আপনার কাঙ্ক্ষিত অপশনটি নির্বাচন করুন।", fontSize = 12.sp, color = Color.Gray) },
+            title = { Text(txt("বার্তা সংশোধন বা মুছুন", "Modify or Delete Message"), fontWeight = FontWeight.Bold, color = WhatsAppTealVal) },
+            text = { Text(txt("বার্তাটির নিরাপত্তা নিশ্চিতকরণঃ দয়া করে আপনার কাঙ্ক্ষিত অপশনটি নির্বাচন করুন।", "Message security verification: Please select your desired option."), fontSize = 12.sp, color = Color.Gray) },
             confirmButton = {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
@@ -4720,7 +4754,7 @@ fun ChatMsgBubble(
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = WhatsAppTealVal)
                     ) {
-                        Text("আমার থেকে মুছুন (Delete for Me)", color = Color.White)
+                        Text(txt("আমার থেকে মুছুন", "Delete for Me"), color = Color.White)
                     }
 
                     // Option 2: Delete For Everyone (Only sender has full permission constraints)
@@ -4733,7 +4767,7 @@ fun ChatMsgBubble(
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
                         ) {
-                            Text("সবার জন্য মুছুন (Delete for Everyone)", color = Color.White)
+                            Text(txt("সবার জন্য মুছুন", "Delete for Everyone"), color = Color.White)
                         }
                     }
 
@@ -4747,7 +4781,7 @@ fun ChatMsgBubble(
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E88E5))
                         ) {
-                            Text("বার্তা সংশোধন করুন (Edit Message)", color = Color.White)
+                            Text(txt("বার্তা সংশোধন করুন", "Edit Message"), color = Color.White)
                         }
                     }
 
@@ -4756,7 +4790,7 @@ fun ChatMsgBubble(
                         modifier = Modifier.fillMaxWidth(),
                         onClick = { showDeleteConfirmationDialog = false }
                     ) {
-                        Text("বাতিল করুন")
+                        Text(txt("বাতিল করুন", "Cancel"))
                     }
                 }
             }
@@ -4766,10 +4800,10 @@ fun ChatMsgBubble(
     if (showEditDialog) {
         AlertDialog(
             onDismissRequest = { showEditDialog = false },
-            title = { Text("বার্তা সংশোধন করুন", fontWeight = FontWeight.Bold, color = WhatsAppTealVal) },
+            title = { Text(txt("বার্তা সংশোধন করুন", "Edit Message"), fontWeight = FontWeight.Bold, color = WhatsAppTealVal) },
             text = {
                 Column {
-                    Text("আপনার বার্তাটি সংশোধন করে নিচের বক্সে লিখুন:", fontSize = 12.sp, color = Color.Gray)
+                    Text(txt("আপনার বার্তাটি সংশোধন করে নিচের বক্সে লিখুন:", "Modify your message and write in the box below:"), fontSize = 12.sp, color = Color.Gray)
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
                         value = editedTextState,
@@ -4790,12 +4824,12 @@ fun ChatMsgBubble(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = WhatsAppTealVal)
                 ) {
-                    Text("সংরক্ষণ করুন", color = Color.White)
+                    Text(txt("সংরক্ষণ করুন", "Save"), color = Color.White)
                 }
             },
             dismissButton = {
                 OutlinedButton(onClick = { showEditDialog = false }) {
-                    Text("বাতিল")
+                    Text(txt("বাতিল", "Cancel"))
                 }
             }
         )
