@@ -39,19 +39,40 @@ class ChatRepository(
 
     fun initializeFirebaseIfConfigured(): Boolean {
         return try {
-            val apiKey = sharedPrefs.getString("firebase_api_key", "") ?: ""
-            val projectId = sharedPrefs.getString("firebase_project_id", "") ?: ""
-            val appId = sharedPrefs.getString("firebase_app_id", "") ?: ""
+            var apiKey = sharedPrefs.getString("firebase_api_key", "") ?: ""
+            var projectId = sharedPrefs.getString("firebase_project_id", "") ?: ""
+            var appId = sharedPrefs.getString("firebase_app_id", "") ?: ""
+
+            if (apiKey.isEmpty() || projectId.isEmpty() || appId.isEmpty()) {
+                apiKey = "AIzaSyCLC-BRtWNzcKFW0Htda4pbNVhmibB21NU"
+                projectId = "barta-chat-927ec"
+                appId = "1:799684230284:web:3322149ca4ff4c91594fa9"
+                
+                sharedPrefs.edit()
+                    .putString("firebase_api_key", apiKey)
+                    .putString("firebase_project_id", projectId)
+                    .putString("firebase_app_id", appId)
+                    .apply()
+                Log.d("BartaChat", "Default custom Firebase config initialized programmatically!")
+            }
 
             if (apiKey.isNotEmpty() && projectId.isNotEmpty() && appId.isNotEmpty()) {
+                val builder = FirebaseOptions.Builder()
+                    .setApiKey(apiKey)
+                    .setProjectId(projectId)
+                    .setApplicationId(appId)
+
+                if (projectId == "barta-chat-927ec") {
+                    builder.setStorageBucket("barta-chat-927ec.firebasestorage.app")
+                    builder.setDatabaseUrl("https://barta-chat-927ec-default-rtdb.asia-southeast1.firebasedatabase.app")
+                } else {
+                    builder.setStorageBucket("$projectId.appspot.com")
+                }
+
                 val app = FirebaseApp.getApps(context).firstOrNull { it.name == "[DEFAULT]" } 
                     ?: FirebaseApp.initializeApp(
                         context,
-                        FirebaseOptions.Builder()
-                            .setApiKey(apiKey)
-                            .setProjectId(projectId)
-                            .setApplicationId(appId)
-                            .build()
+                        builder.build()
                     )
                 firestore = FirebaseFirestore.getInstance(app)
                 firebaseStorage = com.google.firebase.storage.FirebaseStorage.getInstance(app)
@@ -112,9 +133,19 @@ class ChatRepository(
     }
 
     fun getFirebaseConfig(): Triple<String, String, String> {
-        val apiKey = sharedPrefs.getString("firebase_api_key", "") ?: ""
-        val projectId = sharedPrefs.getString("firebase_project_id", "") ?: ""
-        val appId = sharedPrefs.getString("firebase_app_id", "") ?: ""
+        var apiKey = sharedPrefs.getString("firebase_api_key", "") ?: ""
+        var projectId = sharedPrefs.getString("firebase_project_id", "") ?: ""
+        var appId = sharedPrefs.getString("firebase_app_id", "") ?: ""
+        if (apiKey.isEmpty() || projectId.isEmpty() || appId.isEmpty()) {
+            apiKey = "AIzaSyCLC-BRtWNzcKFW0Htda4pbNVhmibB21NU"
+            projectId = "barta-chat-927ec"
+            appId = "1:799684230284:web:3322149ca4ff4c91594fa9"
+            sharedPrefs.edit()
+                .putString("firebase_api_key", apiKey)
+                .putString("firebase_project_id", projectId)
+                .putString("firebase_app_id", appId)
+                .apply()
+        }
         return Triple(apiKey, projectId, appId)
     }
 
