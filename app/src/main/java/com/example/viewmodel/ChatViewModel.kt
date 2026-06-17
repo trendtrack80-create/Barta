@@ -90,8 +90,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         sharedPrefs.edit().putString("app_language", lang).apply()
     }
 
-    // Theme settings: default to false (Light Mode) as specified in the template's prompt color palette
-    val isDarkMode = MutableStateFlow(sharedPrefs.getBoolean("app_theme_dark", false))
+    // Theme settings: default to true (Dark Mode) as requested by user
+    val isDarkMode = MutableStateFlow(sharedPrefs.getBoolean("app_theme_dark", true))
 
     fun toggleTheme() {
         val nextMode = !isDarkMode.value

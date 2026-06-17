@@ -2335,6 +2335,71 @@ fun SettingsTabScreen(
         }
 
         Text(
+            text = txt("থিম সেটিংস", "Theme Settings"),
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+            modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
+        )
+
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 12.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            shape = RectangleShape
+        ) {
+            Column {
+                var showThemeMenu by remember { mutableStateOf(false) }
+                val isDarkTheme by viewModel.isDarkMode.collectAsStateWithLifecycle()
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showThemeMenu = true }
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Palette, contentDescription = null, tint = WhatsAppTealVal)
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Column {
+                            Text(txt("অ্যাপের থিম", "App Theme"), fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurface)
+                            Text(if (isDarkTheme) txt("কালো (Black)", "Black") else txt("সাদা (White)", "White"), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                        }
+                    }
+                    Box {
+                        TextButton(onClick = { showThemeMenu = true }) {
+                            Text(txt("পরিবর্তন করুন", "Change"), color = WhatsAppTealVal)
+                        }
+                        DropdownMenu(expanded = showThemeMenu, onDismissRequest = { showThemeMenu = false }) {
+                            DropdownMenuItem(
+                                text = { Text(txt("কালো (Black)", "Black")) },
+                                onClick = {
+                                    if (!isDarkTheme) {
+                                        viewModel.toggleTheme()
+                                    }
+                                    showThemeMenu = false
+                                    Toast.makeText(viewModel.getApplication(), txt("থিম পরিবর্তন সফল হয়েছে!", "Theme changed successfully!"), Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(txt("সাদা (White)", "White")) },
+                                onClick = {
+                                    if (isDarkTheme) {
+                                        viewModel.toggleTheme()
+                                    }
+                                    showThemeMenu = false
+                                    Toast.makeText(viewModel.getApplication(), txt("থিম পরিবর্তন সফল হয়েছে!", "Theme changed successfully!"), Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        Text(
             text = txt("গোপনীয়তা সেটিংস", "Privacy Options"),
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold,
@@ -3573,6 +3638,7 @@ fun getDeviceContactsNatively(context: Context, fallbackUsers: List<Map<String, 
 fun ProfileTabScreen(
     viewModel: ChatViewModel
 ) {
+    val txt = getTranslator(viewModel = viewModel)
     val myPhone by viewModel.myNumber.collectAsStateWithLifecycle()
 
     val initialDisplayName by viewModel.userDisplayName.collectAsStateWithLifecycle()
@@ -3587,6 +3653,9 @@ fun ProfileTabScreen(
     var showPhotoSelectorProfile by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
+    val galleryPicSuccessMsg = txt("গ্যালারি থেকে প্রোফাইল ছবি নেওয়া হয়েছে!", "Profile picture selected from gallery!")
+    val galleryPicErrorMsg = txt("ছবি লোড করতে সমস্যা হয়েছে!", "Failed to load image!")
+
     val profilePhotoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
         onResult = { uri ->
@@ -3595,9 +3664,9 @@ fun ProfileTabScreen(
                 if (localPath != null) {
                     profilePicState = localPath
                     showPhotoSelectorProfile = false
-                    Toast.makeText(context, "গ্যালারি থেকে প্রোফাইল ছবি নেওয়া হয়েছে!", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, galleryPicSuccessMsg, Toast.LENGTH_SHORT).show()
                 } else {
-                    Toast.makeText(context, "ছবি লোড করতে সমস্যা হয়েছে!", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, galleryPicErrorMsg, Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -3615,7 +3684,7 @@ fun ProfileTabScreen(
         TopAppBar(
             title = {
                 Text(
-                    text = "প্রোফাইল সংশোধন (Edit Profile)",
+                    text = txt("প্রোফাইল সংশোধন (Edit Profile)", "Edit Profile"),
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp
@@ -3660,13 +3729,13 @@ fun ProfileTabScreen(
                         Spacer(modifier = Modifier.height(8.dp))
                         
                         Text(
-                            text = "মোবাইল নাম্বারঃ $myPhone",
+                            text = txt("মোবাইল নাম্বারঃ $myPhone", "Mobile Number: $myPhone"),
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp,
                             color = WhatsAppTealVal
                         )
                         Text(
-                            text = "ছবি পরিবর্তন করতে বৃত্তটিতে স্পর্শ করুন",
+                            text = txt("ছবি পরিবর্তন করতে বৃত্তটিতে স্পর্শ করুন", "Tap on circle to change picture"),
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                         )
@@ -3686,7 +3755,7 @@ fun ProfileTabScreen(
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Text(
-                            text = "ব্যক্তিগত তথ্যসমূহ",
+                            text = txt("ব্যক্তিগত তথ্যসমূহ", "Personal Information"),
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp,
                             color = MaterialTheme.colorScheme.onSurface
@@ -3698,8 +3767,8 @@ fun ProfileTabScreen(
                                 displayNameInput = it
                                 profileSavedAlert = false
                             },
-                            label = { Text("ডিসপ্লে নাম / Display Name") },
-                            placeholder = { Text("উদা: আকাশ চৌধুরী") },
+                            label = { Text(txt("ডিসপ্লে নাম / Display Name", "Display Name")) },
+                            placeholder = { Text(txt("উদা: আকাশ চৌধুরী", "e.g. John Doe")) },
                             singleLine = true,
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = MaterialTheme.colorScheme.onSurface,
@@ -3718,8 +3787,8 @@ fun ProfileTabScreen(
                                 statusMessageInput = it
                                 profileSavedAlert = false
                             },
-                            label = { Text("স্ট্যাটাস মেসেজ / Status Message") },
-                            placeholder = { Text("উদা: চ্যাট করছি বা ব্যস্ত আছি") },
+                            label = { Text(txt("স্ট্যাটাস মেসেজ / Status Message", "Status Message")) },
+                            placeholder = { Text(txt("উদা: চ্যাট করছি বা ব্যস্ত আছি", "e.g. Chatting or Busy")) },
                             singleLine = true,
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = MaterialTheme.colorScheme.onSurface,
@@ -3743,12 +3812,12 @@ fun ProfileTabScreen(
                                 .testTag("save_profile_button"),
                             shape = RoundedCornerShape(8.dp)
                         ) {
-                            Text("প্রোফাইল সেভ করুন", color = Color.White, fontWeight = FontWeight.Bold)
+                            Text(txt("প্রোফাইল সেভ করুন", "Save Profile"), color = Color.White, fontWeight = FontWeight.Bold)
                         }
 
                         if (profileSavedAlert) {
                             Text(
-                                text = "প্রোফাইল সফলভাবে আপডেট করা হয়েছে! 🟢",
+                                text = txt("প্রোফাইল সফলভাবে আপডেট করা হয়েছে! 🟢", "Profile updated successfully! 🟢"),
                                 color = WhatsAppGreenVal,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold,
@@ -3764,7 +3833,7 @@ fun ProfileTabScreen(
     if (showPhotoSelectorProfile) {
         AlertDialog(
             onDismissRequest = { showPhotoSelectorProfile = false },
-            title = { Text("প্রোফাইল ছবি পরিবর্তন", fontWeight = FontWeight.Bold, color = WhatsAppTealVal) },
+            title = { Text(txt("প্রোফাইল ছবি পরিবর্তন", "Change Profile Photo"), fontWeight = FontWeight.Bold, color = WhatsAppTealVal) },
             text = {
                 Column {
                     val dummyPics = listOf("pic1", "pic2", "pic3", "pic4", "pic5", "pic6")
@@ -3822,7 +3891,7 @@ fun ProfileTabScreen(
                     ) {
                         Icon(Icons.Default.PhotoLibrary, contentDescription = null, tint = Color.White)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("গ্যালারি থেকে ছবি নিন", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text(txt("গ্যালারি থেকে ছবি নিন", "Choose from Gallery"), color = Color.White, fontWeight = FontWeight.Bold)
                     }
                 }
             },
@@ -3831,7 +3900,7 @@ fun ProfileTabScreen(
                     onClick = { showPhotoSelectorProfile = false },
                     colors = ButtonDefaults.buttonColors(containerColor = WhatsAppGreenVal)
                 ) {
-                    Text("ঠিক আছে", color = Color.White)
+                    Text(txt("ঠিক আছে", "OK"), color = Color.White)
                 }
             }
         )
