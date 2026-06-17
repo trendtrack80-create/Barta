@@ -1118,7 +1118,7 @@ fun BottomBarNavigation(
             colors = NavigationBarItemDefaults.colors(
                 selectedIconColor = WhatsAppTealVal,
                 selectedTextColor = WhatsAppTealVal,
-                indicatorColor = Color(0xFFE8F5E9)
+                indicatorColor = WhatsAppTealVal.copy(alpha = 0.12f)
             ),
             modifier = Modifier.testTag("tab_chats")
         )
@@ -1130,7 +1130,7 @@ fun BottomBarNavigation(
             colors = NavigationBarItemDefaults.colors(
                 selectedIconColor = WhatsAppTealVal,
                 selectedTextColor = WhatsAppTealVal,
-                indicatorColor = Color(0xFFE8F5E9)
+                indicatorColor = WhatsAppTealVal.copy(alpha = 0.12f)
             ),
             modifier = Modifier.testTag("tab_groups")
         )
@@ -1142,7 +1142,7 @@ fun BottomBarNavigation(
             colors = NavigationBarItemDefaults.colors(
                 selectedIconColor = WhatsAppTealVal,
                 selectedTextColor = WhatsAppTealVal,
-                indicatorColor = Color(0xFFE8F5E9)
+                indicatorColor = WhatsAppTealVal.copy(alpha = 0.12f)
             ),
             modifier = Modifier.testTag("tab_status")
         )
@@ -1154,7 +1154,7 @@ fun BottomBarNavigation(
             colors = NavigationBarItemDefaults.colors(
                 selectedIconColor = WhatsAppTealVal,
                 selectedTextColor = WhatsAppTealVal,
-                indicatorColor = Color(0xFFE8F5E9)
+                indicatorColor = WhatsAppTealVal.copy(alpha = 0.12f)
             ),
             modifier = Modifier.testTag("tab_contacts")
         )
@@ -1166,7 +1166,7 @@ fun BottomBarNavigation(
             colors = NavigationBarItemDefaults.colors(
                 selectedIconColor = WhatsAppTealVal,
                 selectedTextColor = WhatsAppTealVal,
-                indicatorColor = Color(0xFFE8F5E9)
+                indicatorColor = WhatsAppTealVal.copy(alpha = 0.12f)
             ),
             modifier = Modifier.testTag("tab_profile")
         )
@@ -1178,7 +1178,7 @@ fun BottomBarNavigation(
             colors = NavigationBarItemDefaults.colors(
                 selectedIconColor = WhatsAppTealVal,
                 selectedTextColor = WhatsAppTealVal,
-                indicatorColor = Color(0xFFE8F5E9)
+                indicatorColor = WhatsAppTealVal.copy(alpha = 0.12f)
             ),
             modifier = Modifier.testTag("tab_settings")
         )
@@ -1295,8 +1295,8 @@ fun ChatsTabScreen(
                         AvatarView(name = user.name, base64 = user.profilePicBase64, size = 42)
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
-                            Text(user.name, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.White)
-                            Text(user.phone, fontSize = 12.sp, color = Color.LightGray)
+                            Text(user.name, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = MaterialTheme.colorScheme.onBackground)
+                            Text(user.phone, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Spacer(modifier = Modifier.weight(1f))
                         Text(txt("মেসেজ দিন ➡️", "Message ➡️"), color = WhatsAppGreenVal, fontSize = 11.sp, fontWeight = FontWeight.Bold)
@@ -2191,7 +2191,7 @@ fun SettingsTabScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFFF0F2F5))
+            .background(MaterialTheme.colorScheme.background)
             .verticalScroll(rememberScrollState())
     ) {
         TopAppBar(
@@ -2218,7 +2218,7 @@ fun SettingsTabScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(bottom = 12.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             shape = RectangleShape
         ) {
             Row(
@@ -2233,11 +2233,11 @@ fun SettingsTabScreen(
                 AvatarView(name = myName, base64 = myProfilePic, size = 56)
                 Spacer(modifier = Modifier.width(16.dp))
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(myName, fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Color.Black)
+                    Text(myName, fontWeight = FontWeight.Bold, fontSize = 17.sp, color = MaterialTheme.colorScheme.onSurface)
                     Spacer(modifier = Modifier.height(2.dp))
-                    Text(text = myPhone ?: "", color = Color.Gray, fontSize = 13.sp)
+                    Text(text = myPhone ?: "", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f), fontSize = 13.sp)
                 }
-                Icon(Icons.Default.KeyboardArrowRight, contentDescription = null, tint = Color.Gray)
+                Icon(Icons.Default.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
             }
         }
 
@@ -2245,7 +2245,7 @@ fun SettingsTabScreen(
             text = txt("অ্যাকাউন্ট ও নিরাপত্তা", "Account & Security"),
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold,
-            color = Color.Gray,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
         )
 
@@ -2253,7 +2253,7 @@ fun SettingsTabScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(bottom = 12.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             shape = RectangleShape
         ) {
             Column {
@@ -2267,8 +2267,8 @@ fun SettingsTabScreen(
                     Icon(Icons.Default.Lock, contentDescription = null, tint = WhatsAppTealVal)
                     Spacer(modifier = Modifier.width(14.dp))
                     Column {
-                        Text(txt("পাসওয়ার্ড পরিবর্তন করুন", "Change Password"), fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = Color.Black)
-                        Text(txt("আপনার ৬-৮ ডিজিটের পাসওয়ার্ড আপডেট করুন", "Update your 6-8 character password"), fontSize = 12.sp, color = Color.Gray)
+                        Text(txt("পাসওয়ার্ড পরিবর্তন করুন", "Change Password"), fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurface)
+                        Text(txt("আপনার ৬-৮ ডিজিটের পাসওয়ার্ড আপডেট করুন", "Update your 6-8 character password"), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                     }
                 }
             }
@@ -2278,7 +2278,7 @@ fun SettingsTabScreen(
             text = txt("ভাষা সেটিংস", "Language Settings"),
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold,
-            color = Color.Gray,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
         )
 
@@ -2286,7 +2286,7 @@ fun SettingsTabScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(bottom = 12.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             shape = RectangleShape
         ) {
             Column {
@@ -2303,8 +2303,8 @@ fun SettingsTabScreen(
                         Icon(Icons.Default.Language, contentDescription = null, tint = WhatsAppTealVal)
                         Spacer(modifier = Modifier.width(14.dp))
                         Column {
-                            Text(txt("অ্যাপের ভাষা", "App Language"), fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = Color.Black)
-                            Text(if (appLanguage == "bn") "বাংলা (Bangla)" else "English (English)", fontSize = 12.sp, color = Color.Gray)
+                            Text(txt("অ্যাপের ভাষা", "App Language"), fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurface)
+                            Text(if (appLanguage == "bn") "বাংলা (Bangla)" else "English (English)", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                         }
                     }
                     Box {
@@ -2338,7 +2338,7 @@ fun SettingsTabScreen(
             text = txt("গোপনীয়তা সেটিংস", "Privacy Options"),
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold,
-            color = Color.Gray,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
         )
 
@@ -2346,7 +2346,7 @@ fun SettingsTabScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(bottom = 12.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             shape = RectangleShape
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -2367,8 +2367,8 @@ fun SettingsTabScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column {
-                        Text(txt("সর্বশেষ সক্রিয়তা", "Last Seen"), fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = Color.Black)
-                        Text(displayedLastSeen, fontSize = 12.sp, color = Color.Gray)
+                        Text(txt("সর্বশেষ সক্রিয়তা", "Last Seen"), fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurface)
+                        Text(displayedLastSeen, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                     }
                     Box {
                         TextButton(onClick = { showLastSeenMenu = true }) {
@@ -2393,7 +2393,7 @@ fun SettingsTabScreen(
                     }
                 }
 
-                HorizontalDivider(color = Color(0xFFF1F1F1))
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
 
                 // Profile photo visibility
                 var photoVisibility by remember { mutableStateOf("Everyone") }
@@ -2411,8 +2411,8 @@ fun SettingsTabScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column {
-                        Text(txt("প্রোফাইল ফটো", "Profile Photo"), fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = Color.Black)
-                        Text(displayedPhotoVisibility, fontSize = 12.sp, color = Color.Gray)
+                        Text(txt("প্রোফাইল ফটো", "Profile Photo"), fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurface)
+                        Text(displayedPhotoVisibility, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                     }
                     Box {
                         TextButton(onClick = { showPhotoMenu = true }) {
@@ -2436,7 +2436,7 @@ fun SettingsTabScreen(
                     }
                 }
 
-                HorizontalDivider(color = Color(0xFFF1F1F1))
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
 
                 // Read Receipts Switch
                 var readReceiptsToggle by remember { mutableStateOf(true) }
@@ -2446,8 +2446,8 @@ fun SettingsTabScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(txt("পঠিত বার্তা নিশ্চিতকরণ", "Read Receipts"), fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = Color.Black)
-                        Text(txt("অন্য কারোর ব্লু টিক চ্যাট দেখতে এটি সাহায্য করে", "Allows you to see read receipts from others"), fontSize = 12.sp, color = Color.Gray)
+                        Text(txt("পঠিত বার্তা নিশ্চিতকরণ", "Read Receipts"), fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurface)
+                        Text(txt("অন্য কারোর ব্লু টিক চ্যাট দেখতে এটি সাহায্য করে", "Allows you to see read receipts from others"), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                     }
                     Switch(
                         checked = readReceiptsToggle,
@@ -2465,7 +2465,7 @@ fun SettingsTabScreen(
             text = txt("ফায়ারবেস ক্লাউড কানেকশন", "Firebase Cloud Connection"),
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold,
-            color = Color.Gray,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
         )
 
@@ -2473,11 +2473,11 @@ fun SettingsTabScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(bottom = 16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             shape = RectangleShape
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(txt("রিয়েল টাইম সিংক্রোনাইজেশন ক্লাউড ডাটাবেস সেটিংস এখানে পরিবর্তন করুন:", "Configure real-time cloud synchronization database parameters here:"), fontSize = 12.sp, color = Color.Gray)
+                Text(txt("রিয়েল টাইম সিংক্রোনাইজেশন ক্লাউড ডাটাবেস সেটিংস এখানে পরিবর্তন করুন:", "Configure real-time cloud synchronization database parameters here:"), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
 
                 OutlinedTextField(
                     value = editingApiKey,
@@ -2485,9 +2485,10 @@ fun SettingsTabScreen(
                     label = { Text("API Key") },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.Black,
-                        unfocusedTextColor = Color.Black,
-                        focusedLabelColor = WhatsAppTealVal
+                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        focusedLabelColor = WhatsAppTealVal,
+                        unfocusedLabelColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                     ),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -2498,9 +2499,10 @@ fun SettingsTabScreen(
                     label = { Text("Project ID") },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.Black,
-                        unfocusedTextColor = Color.Black,
-                        focusedLabelColor = WhatsAppTealVal
+                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        focusedLabelColor = WhatsAppTealVal,
+                        unfocusedLabelColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                     ),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -2511,9 +2513,10 @@ fun SettingsTabScreen(
                     label = { Text("App ID") },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.Black,
-                        unfocusedTextColor = Color.Black,
-                        focusedLabelColor = WhatsAppTealVal
+                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        focusedLabelColor = WhatsAppTealVal,
+                        unfocusedLabelColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                     ),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -2554,7 +2557,7 @@ fun SettingsTabScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(bottom = 32.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             shape = RectangleShape
         ) {
             Row(
@@ -2580,7 +2583,7 @@ fun SettingsTabScreen(
             title = { Text("পাসওয়ার্ড পরিবর্তন", fontWeight = FontWeight.Bold, color = WhatsAppTealVal) },
             text = {
                 Column {
-                    Text("অনন্য নতুন ৬ থেকে ৮ অক্ষরের পাসওয়ার্ড সতর্কতার সাথে দিনঃ", fontSize = 12.sp, color = Color.Gray)
+                    Text("অনন্য নতুন ৬ থেকে ৮ অক্ষরের পাসওয়ার্ড সতর্কতার সাথে দিনঃ", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                     Spacer(modifier = Modifier.height(10.dp))
                     OutlinedTextField(
                         value = newPasswordInput,
@@ -2588,9 +2591,10 @@ fun SettingsTabScreen(
                         placeholder = { Text("******") },
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.Black,
-                            unfocusedTextColor = Color.Black,
-                            focusedBorderColor = WhatsAppTealVal
+                            focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                            unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                            focusedBorderColor = WhatsAppTealVal,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline
                         ),
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -2676,7 +2680,7 @@ fun ChatRowItem(
                         fontSize = 16.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        color = Color.White
+                        color = MaterialTheme.colorScheme.onBackground
                     )
                     if (contact.isGroup) {
                         Spacer(modifier = Modifier.width(6.dp))
@@ -2825,7 +2829,7 @@ fun ContactsTabScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 12.dp)
-                    .background(Color(0xFF1F2937), shape = RoundedCornerShape(24.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), shape = RoundedCornerShape(24.dp))
                     .padding(4.dp),
                 horizontalArrangement = Arrangement.Center
             ) {
@@ -2844,7 +2848,7 @@ fun ContactsTabScreen(
                 ) {
                     Text(
                         text = txt("আমার পরিচিতি", "My Contacts"),
-                        color = if (activeSubTab == "local") Color.White else Color.LightGray,
+                        color = if (activeSubTab == "local") Color.White else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp
                     )
@@ -2869,7 +2873,7 @@ fun ContactsTabScreen(
                     ) {
                         Text(
                             text = txt("নিবন্ধিত সব ব্যবহারকারী", "Registered Users"),
-                            color = if (activeSubTab == "firestore") Color.White else Color.LightGray,
+                            color = if (activeSubTab == "firestore") Color.White else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                             fontWeight = FontWeight.Bold,
                             fontSize = 13.sp
                         )
@@ -2890,17 +2894,17 @@ fun ContactsTabScreen(
                 placeholder = {
                     Text(
                         text = if (activeSubTab == "local") txt("কন্টাক্ট খুঁজুন...", "Search contacts...") else txt("ব্যবহারকারী খুঁজুন...", "Search registered users..."),
-                        color = Color.LightGray,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                         fontSize = 14.sp
                     )
                 },
                 leadingIcon = {
-                    Icon(Icons.Default.Search, contentDescription = "Search Icon", tint = Color.LightGray)
+                    Icon(Icons.Default.Search, contentDescription = "Search Icon", tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
                 },
                 trailingIcon = {
                     if (searchQueryText.isNotEmpty()) {
                         IconButton(onClick = { searchQueryText = "" }) {
-                            Icon(Icons.Default.Clear, contentDescription = "Clear", tint = Color.LightGray)
+                            Icon(Icons.Default.Clear, contentDescription = "Clear", tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
                         }
                     }
                 },
@@ -2911,12 +2915,12 @@ fun ContactsTabScreen(
                 shape = RoundedCornerShape(12.dp),
                 singleLine = true,
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
+                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
                     focusedBorderColor = WhatsAppTealVal,
-                    unfocusedBorderColor = Color.LightGray.copy(alpha = 0.5f),
-                    focusedContainerColor = Color.White.copy(alpha = 0.05f),
-                    unfocusedContainerColor = Color.White.copy(alpha = 0.02f)
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
                 )
             )
 
@@ -2968,8 +2972,8 @@ fun ContactsTabScreen(
                                     }
                                     Spacer(modifier = Modifier.width(16.dp))
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text(contact.name, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.White)
-                                        Text(contact.phone, color = Color.LightGray, fontSize = 14.sp)
+                                        Text(contact.name, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onBackground)
+                                        Text(contact.phone, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
                                     }
                                     if (!contact.isGroup) {
                                         Icon(
@@ -3064,10 +3068,10 @@ fun ContactsTabScreen(
                                     AvatarView(name = uName, base64 = uPic, size = 44)
                                     Spacer(modifier = Modifier.width(16.dp))
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text(uName, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.White)
+                                        Text(uName, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onBackground)
                                         Spacer(modifier = Modifier.height(2.dp))
-                                        Text(uStatus, color = Color.Gray, fontSize = 13.sp, maxLines = 1)
-                                        Text(uPhone, color = Color.LightGray, fontSize = 11.sp)
+                                        Text(uStatus, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f), fontSize = 13.sp, maxLines = 1)
+                                        Text(uPhone, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
                                     }
                                     Box(
                                         modifier = Modifier
@@ -3606,7 +3610,7 @@ fun ProfileTabScreen(
     }
 
     Column(
-        modifier = Modifier.fillMaxSize().background(Color(0xFFF0F2F5))
+        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
     ) {
         TopAppBar(
             title = {
@@ -3629,7 +3633,7 @@ fun ProfileTabScreen(
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                     shape = RoundedCornerShape(12.dp),
                     elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                 ) {
@@ -3642,7 +3646,7 @@ fun ProfileTabScreen(
                                 .size(90.dp)
                                 .clip(CircleShape)
                                 .clickable { showPhotoSelectorProfile = true }
-                                .background(Color(0xFFEEEEEE))
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
                                 .border(2.5.dp, WhatsAppGreenVal, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
@@ -3664,7 +3668,7 @@ fun ProfileTabScreen(
                         Text(
                             text = "ছবি পরিবর্তন করতে বৃত্তটিতে স্পর্শ করুন",
                             fontSize = 11.sp,
-                            color = Color.Gray
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                         )
                     }
                 }
@@ -3673,7 +3677,7 @@ fun ProfileTabScreen(
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                     shape = RoundedCornerShape(12.dp),
                     elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                 ) {
@@ -3685,7 +3689,7 @@ fun ProfileTabScreen(
                             text = "ব্যক্তিগত তথ্যসমূহ",
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp,
-                            color = Color.Black
+                            color = MaterialTheme.colorScheme.onSurface
                         )
 
                         OutlinedTextField(
@@ -3698,10 +3702,10 @@ fun ProfileTabScreen(
                             placeholder = { Text("উদা: আকাশ চৌধুরী") },
                             singleLine = true,
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.Black,
-                                unfocusedTextColor = Color.Black,
+                                focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                                unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
                                 focusedLabelColor = WhatsAppTealVal,
-                                unfocusedLabelColor = Color.Gray
+                                unfocusedLabelColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                             ),
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -3718,10 +3722,10 @@ fun ProfileTabScreen(
                             placeholder = { Text("উদা: চ্যাট করছি বা ব্যস্ত আছি") },
                             singleLine = true,
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.Black,
-                                unfocusedTextColor = Color.Black,
+                                focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                                unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
                                 focusedLabelColor = WhatsAppTealVal,
-                                unfocusedLabelColor = Color.Gray
+                                unfocusedLabelColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                             ),
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -4580,7 +4584,19 @@ fun ChatMsgBubble(
     onVideoClick: (String) -> Unit
 ) {
     val layoutAlign = if (isMe) Alignment.CenterEnd else Alignment.CenterStart
-    val bubbleColor = if (isMe) WhatsAppLightGreenVal else Color.White
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val bubbleColor = if (isMe) {
+        if (isDark) Color(0xFF0F766E) else WhatsAppLightGreenVal
+    } else {
+        if (isDark) Color(0xFF1E293B) else Color.White
+    }
+    val textColor = if (isMe) {
+        if (isDark) Color.White else Color.Black
+    } else {
+        if (isDark) Color.White else Color.Black
+    }
+    val subtextColor = if (isDark) Color.White.copy(alpha = 0.6f) else Color.Gray
+
     val bubbleShape = if (isMe) {
         RoundedCornerShape(12.dp, 12.dp, 0.dp, 12.dp)
     } else {
@@ -4700,13 +4716,13 @@ fun ChatMsgBubble(
                         Text(
                             text = message.text,
                             fontSize = 15.sp,
-                            color = Color.Black
+                            color = textColor
                         )
                         if (message.isEdited) {
                             Text(
                                 text = if (isBengali) "সংশোধিত" else "edited",
                                 fontSize = 10.sp,
-                                color = Color.Gray,
+                                color = subtextColor,
                                 fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
                                 modifier = Modifier.padding(top = 1.dp)
                             )
@@ -4733,7 +4749,7 @@ fun ChatMsgBubble(
                     Text(
                         text = "$relativeTime • ${formatTime(message.timestamp)}",
                         fontSize = 10.sp,
-                        color = Color.Gray
+                        color = subtextColor
                     )
                     if (isMe) {
                         Spacer(modifier = Modifier.width(4.dp))
