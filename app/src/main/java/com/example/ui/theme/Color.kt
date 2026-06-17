@@ -4,30 +4,30 @@ import androidx.compose.ui.graphics.Color
 
 val WhatsAppGreenVal = Color(0xFF25D366)
 val WhatsAppTealDarkVal = Color(0xFF075E54)
-val WhatsAppTealVal = Color(0xFF0F766E) // Match premium deep teal
-val WhatsAppLightGreenVal = Color(0xFFD9FDD3)
-val WhatsAppGrayIncomingVal = Color(0xFFF9F9F9)
-val WhatsAppGrayBackgroundVal = Color(0xFFEFEAE2) // WhatsApp background texture tint
-val WhatsAppDarkBackgroundVal = Color(0xFF0F172A) // Modern dark slate background
+val WhatsAppTealVal = Color(0xFF26B29E) // Styled exactly like the screenshot (vibrant teal)
+val WhatsAppLightGreenVal = Color(0xFFE6F7F4) // Soft light mint bubble
+val WhatsAppGrayIncomingVal = Color(0xFFF1F5F9)
+val WhatsAppGrayBackgroundVal = Color(0xFFF3FAF8) // WhatsApp background texture tint (soft light mint)
+val WhatsAppDarkBackgroundVal = Color(0xFF090D16) // Modern dark black background
 val WhatsAppDarkIncomingVal = Color(0xFF1E293B)  // Surface card equivalent in dark mode
-val WhatsAppDarkOutgoingVal = Color(0xFF0F766E)  // Deep teal
+val WhatsAppDarkOutgoingVal = Color(0xFF26B29E)  // Vibrant teal
 
 // Custom Premium Color Palette Requested
-val PremiumDeepTeal = Color(0xFF0F766E)       // #0F766E Deep Teal (Primary)
-val PremiumIndigo = Color(0xFF4F46E5)         // #4F46E5 Indigo (Secondary)
-val PremiumSuccessGreen = Color(0xFF22C55E)   // #22C55E Success Green (Accent)
-val PremiumBackgroundLight = Color(0xFFF8FAFC) // #F8FAFC Light Background
-val PremiumSurfaceLight = Color(0xFFFFFFFF)    // #FFFFFF Surface Cards
-val PremiumTextPrimaryLight = Color(0xFF0F172A)// #0F172A Dark Slate Text
-val PremiumTextSecondaryLight = Color(0xFF64748B)// #64748B Gray Text
-val PremiumDividerLight = Color(0xFFE2E8F0)    // #E2E8F0 Light Gray Divider
+val PremiumDeepTeal = Color(0xFF26B29E)       // #26B29E Vibrant Teal
+val PremiumIndigo = Color(0xFF6366F1)         // Modern Indigo
+val PremiumSuccessGreen = Color(0xFF10B981)   // Success Green
+val PremiumBackgroundLight = Color(0xFFF3FAF8) // Soft light mint background matching screenshot
+val PremiumSurfaceLight = Color(0xFFFFFFFF)    // Pure white surfaces
+val PremiumTextPrimaryLight = Color(0xFF0F172A)// Dark Slate Text
+val PremiumTextSecondaryLight = Color(0xFF64748B)// Gray Text
+val PremiumDividerLight = Color(0xFFE2E8F0)    // Divider
 
 // Dark Mode counterpart definitions
-val PremiumBackgroundDark = Color(0xFF0F172A)
-val PremiumSurfaceDark = Color(0xFF1E293B)
+val PremiumBackgroundDark = Color(0xFF090D16) // Rich pure solid black background
+val PremiumSurfaceDark = Color(0xFF131D30)    // Dark slate card surfaces
 val PremiumTextPrimaryDark = Color(0xFFF8FAFC)
 val PremiumTextSecondaryDark = Color(0xFF94A3B8)
-val PremiumDividerDark = Color(0xFF334155)
+val PremiumDividerDark = Color(0xFF1E293B)
 
 val Purple80 = Color(0xFFD0BCFF)
 val PurpleGrey80 = Color(0xFFCCC2DC)

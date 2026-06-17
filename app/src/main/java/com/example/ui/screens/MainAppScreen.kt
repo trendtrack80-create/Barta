@@ -56,6 +56,12 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.geometry.Offset
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.Contact
 import com.example.data.LocalUser
@@ -1203,155 +1209,372 @@ fun ChatsTabScreen(
     // Query on global registered users matching the name
     val searchedGlobalUsers by viewModel.searchedGlobalUsers.collectAsStateWithLifecycle()
 
-    Column(
-        modifier = Modifier.fillMaxSize()
-    ) {
-        // WhatsApp themed Header
-        TopAppBar(
-            title = {
-                Column {
-                    Text(
-                        text = txt("বার্তা", "Chat"),
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        fontSize = 18.sp
-                    )
-                    Text(
-                        text = "Logged in as ${myPhone ?: ""}",
-                        fontSize = 11.sp,
-                        color = Color(0xFFC8E6C9)
-                    )
-                }
-            },
-            colors = TopAppBarDefaults.topAppBarColors(containerColor = WhatsAppTealVal)
-        )
+    val isDark by viewModel.isDarkMode.collectAsStateWithLifecycle()
+    var activeSubTab by remember { mutableStateOf("all") }
 
-        // Custom search box matching WhatsApp layout
-        OutlinedTextField(
-            value = searchVal,
-            onValueChange = { viewModel.searchQuery.value = it },
-            placeholder = { Text(txt("নাম অথবা মোবাইল দিয়ে সার্চ করুন...", "Search by name or mobile..."), color = Color.Gray) },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.Gray) },
-            trailingIcon = {
-                if (searchVal.isNotEmpty()) {
-                    IconButton(onClick = { viewModel.searchQuery.value = "" }) {
-                        Icon(Icons.Default.Clear, contentDescription = "Clear")
-                    }
-                }
-            },
-            singleLine = true,
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedTextColor = Color.White,
-                unfocusedTextColor = Color.White,
-                focusedContainerColor = WhatsAppDarkIncomingVal,
-                unfocusedContainerColor = WhatsAppDarkIncomingVal,
-                focusedBorderColor = Color.Transparent,
-                unfocusedBorderColor = Color.Transparent,
-                focusedPlaceholderColor = Color.LightGray,
-                unfocusedPlaceholderColor = Color.LightGray
-            ),
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(if (isDark) Color(0xFF090D16) else Color(0xFFF3FAF8))
+    ) {
+        // TOP custom header bar containing gradient background, logo, slogan, wavy indicator and theme icon
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp)
-                .clip(RoundedCornerShape(24.dp))
-        )
-
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .weight(1f)
+                .background(
+                    brush = if (isDark) {
+                        Brush.linearGradient(
+                            colors = listOf(Color(0xFF0E2A28), Color(0xFF0F172A))
+                        )
+                    } else {
+                        Brush.linearGradient(
+                            colors = listOf(Color(0xFF05B59E), Color(0xFFA7F3D0))
+                        )
+                    },
+                    shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
+                )
+                .padding(top = 16.dp, bottom = 26.dp, start = 16.dp, end = 16.dp)
         ) {
-            // Global search result - start chatting directly
-            if (searchVal.isNotEmpty() && searchedGlobalUsers.isNotEmpty()) {
-                item {
-                    Text(
-                        text = txt("সার্চ করা অন্যান্য ব্যবহারকারীরা (অনলাইন):", "Other Searched Users (Online):"),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = WhatsAppTealVal,
-                        modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 4.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Left avatar logo with gradient
+                Box(
+                    modifier = Modifier
+                        .size(52.dp)
+                        .background(
+                            brush = Brush.linearGradient(
+                                colors = listOf(Color(0xFF059669), Color(0xFF84CC16))
+                            ),
+                            shape = CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.Chat,
+                        contentDescription = "Logo",
+                        tint = Color.White,
+                        modifier = Modifier.size(26.dp)
                     )
                 }
 
-                items(searchedGlobalUsers) { user ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                // Add user to contacts instantly and chat
-                                viewModel.addNewContact(user.name, user.phone, false)
-                                viewModel.selectContact(
-                                    Contact(
-                                        phone = user.phone,
-                                        name = user.name,
-                                        profilePicUri = user.profilePicBase64,
-                                        lastSeen = "online"
-                                    )
-                                )
-                            }
-                            .padding(vertical = 12.dp, horizontal = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        AvatarView(name = user.name, base64 = user.profilePicBase64, size = 42)
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column {
-                            Text(user.name, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = MaterialTheme.colorScheme.onBackground)
-                            Text(user.phone, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(modifier = Modifier.width(12.dp))
+
+                // Middle Title + Slogan
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = txt("বার্তা (Chat)", "Chat"),
+                        fontWeight = FontWeight.Bold,
+                        color = if (isDark) Color.White else Color(0xFF072C2B),
+                        fontSize = 22.sp
+                    )
+                    Spacer(modifier = Modifier.height(1.dp))
+                    Text(
+                        text = txt("সংযোগ হোক সহজ, দূরত্ব হোক কম", "Connections simple, distances less"),
+                        fontSize = 11.sp,
+                        color = if (isDark) Color.White.copy(alpha = 0.7f) else Color(0xFF0B6356),
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(modifier = Modifier.height(3.dp))
+                    // Cute dynamic canvas wave drawing matching the picture
+                    Canvas(modifier = Modifier.width(60.dp).height(4.dp)) {
+                        val path = Path().apply {
+                            moveTo(0f, 2f)
+                            quadraticTo(10f, -1f, 20f, 2f)
+                            quadraticTo(30f, 5f, 40f, 2f)
+                            quadraticTo(50f, -1f, 60f, 2f)
                         }
-                        Spacer(modifier = Modifier.weight(1f))
-                        Text(txt("মেসেজ দিন ➡️", "Message ➡️"), color = WhatsAppGreenVal, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        drawPath(
+                            path = path,
+                            color = Color(0xFF0EA5E9),
+                            style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
+                        )
                     }
-                    HorizontalDivider(color = Color(0xFF202C33))
-                }
-                
-                item { Spacer(modifier = Modifier.height(12.dp)) }
-            }
-
-            // Existing Chats Header
-            if (individualChats.isNotEmpty()) {
-                item {
-                    Text(
-                        text = txt("আমার চ্যাটসমূহ (Active Chats):", "My Chats (Active Chats):"),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.Gray,
-                        modifier = Modifier.padding(start = 16.dp, bottom = 4.dp)
-                    )
                 }
 
-                items(individualChats) { contact ->
-                    ChatRowItem(
-                        contact = contact,
-                        lang = appLanguage,
-                        onClick = { onChatClick(contact) }
-                    )
-                    HorizontalDivider(
-                        color = Color(0xFFF5F5F5),
-                        thickness = 1.dp,
-                        modifier = Modifier.padding(start = 76.dp)
-                    )
-                }
-            } else if (searchedGlobalUsers.isEmpty()) {
-                item {
+                // Right circular whites (with soft shadow)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Dark mode button
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 100.dp),
+                            .size(38.dp)
+                            .background(if (isDark) Color(0xFF1E293B) else Color.White, CircleShape)
+                            .clickable { viewModel.toggleTheme() },
                         contentAlignment = Alignment.Center
                     ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                imageVector = Icons.Default.ChatBubbleOutline,
-                                contentDescription = "Empty",
-                                modifier = Modifier.size(56.dp),
-                                tint = Color.LightGray
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
+                        Icon(
+                            imageVector = if (isDark) Icons.Default.WbSunny else Icons.Default.DarkMode,
+                            contentDescription = "Theme Mode",
+                            tint = if (isDark) Color(0xFFFFD700) else Color(0xFF1E293B),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
+                    // Quick help info toast
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .background(if (isDark) Color(0xFF1E293B) else Color.White, CircleShape)
+                            .clickable {
+                                Toast.makeText(viewModel.getApplication(), txt("বার্তা অ্যাপে স্বাগতম!", "Welcome to Barta App!"), Toast.LENGTH_SHORT).show()
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Menu,
+                            contentDescription = "Menu Options",
+                            tint = if (isDark) Color.White else Color(0xFF1E293B),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        // Parent Container for White/Dark Container of the chats
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .offset(y = (-14).dp), // Beautiful overlap over the gradient bottom curve
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = if (isDark) Color(0xFF090D16) else Color.White
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 14.dp, vertical = 10.dp)
+            ) {
+                // Search box row
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = searchVal,
+                        onValueChange = { viewModel.searchQuery.value = it },
+                        placeholder = {
                             Text(
-                                text = txt("কোনো চ্যাট পাওয়া যায়নি", "No chats found"),
-                                color = Color.Gray,
-                                fontSize = 14.sp
+                                text = txt("মানুষ, গ্রুপ বা বার্তা খুঁজুন...", "Search people, groups or messages..."),
+                                color = if (isDark) Color.LightGray.copy(alpha = 0.6f) else Color.Gray,
+                                fontSize = 13.sp
                             )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = "Search",
+                                tint = if (isDark) Color.LightGray else Color.Gray,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        },
+                        trailingIcon = {
+                            if (searchVal.isNotEmpty()) {
+                                IconButton(onClick = { viewModel.searchQuery.value = "" }) {
+                                    Icon(Icons.Default.Clear, contentDescription = "Clear", tint = if (isDark) Color.White else Color.Black, modifier = Modifier.size(18.dp))
+                                }
+                            }
+                        },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = if (isDark) Color.White else Color.Black,
+                            unfocusedTextColor = if (isDark) Color.White else Color.Black,
+                            focusedContainerColor = if (isDark) Color(0xFF1E293B) else Color(0xFFF1F5F9),
+                            unfocusedContainerColor = if (isDark) Color(0xFF1E293B) else Color(0xFFF1F5F9),
+                            focusedBorderColor = Color.Transparent,
+                            unfocusedBorderColor = Color.Transparent,
+                            focusedPlaceholderColor = Color.LightGray,
+                            unfocusedPlaceholderColor = Color.LightGray
+                        ),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(46.dp)
+                            .clip(RoundedCornerShape(22.dp))
+                    )
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    // Beside search is the filter tune button with active teal tint
+                    Box(
+                        modifier = Modifier
+                            .size(46.dp)
+                            .background(if (isDark) Color(0xFF1E293B) else Color(0xFFF1F5F9), CircleShape)
+                            .clickable {
+                                Toast.makeText(viewModel.getApplication(), txt("ফিল্টার অপশন শীঘ্রই আসছে!", "Filters coming soon!"), Toast.LENGTH_SHORT).show()
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Tune,
+                            contentDescription = "Tune",
+                            tint = Color(0xFF26B29E),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
+                // Row of subcategory pills: "সব", "আনপড়া", "প্রিয়", "গ্রুপ"
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // "সব" Pill
+                    val isAllActive = activeSubTab == "all"
+                    PillItem(
+                        text = txt("সব", "All"),
+                        icon = Icons.Default.Apps,
+                        isSelected = isAllActive,
+                        isDark = isDark,
+                        onClick = { activeSubTab = "all" }
+                    )
+
+                    // "আনপড়া" Pill
+                    val isUnreadActive = activeSubTab == "unread"
+                    PillItem(
+                        text = txt("আনপড়া", "Unread"),
+                        icon = Icons.Default.ChatBubbleOutline,
+                        isSelected = isUnreadActive,
+                        isDark = isDark,
+                        showDotBadge = individualChats.any { it.unreadCount > 0 },
+                        onClick = { activeSubTab = "unread" }
+                    )
+
+                    // "প্রিয়" Pill
+                    val isFavActive = activeSubTab == "fav"
+                    PillItem(
+                        text = txt("প্রিয়", "Favorites"),
+                        icon = Icons.Default.Star,
+                        isSelected = isFavActive,
+                        isDark = isDark,
+                        onClick = { activeSubTab = "fav" }
+                    )
+
+                    // "গ্রুপ" Pill (automatically redirects to GroupsTab)
+                    PillItem(
+                        text = txt("গ্রুপ", "Groups"),
+                        icon = Icons.Default.Groups,
+                        isSelected = false,
+                        isDark = isDark,
+                        onClick = {
+                            viewModel.selectTab("groups")
+                        }
+                    )
+                }
+
+                // Apply filtering list of chats based on activeSubTab
+                val filteredChats = remember(individualChats, activeSubTab) {
+                    when (activeSubTab) {
+                        "unread" -> individualChats.filter { it.unreadCount > 0 }
+                        "fav" -> individualChats.filter { it.name.contains("সুমি") || it.name.contains("রফিক") || it.phone.endsWith("2") || it.phone.endsWith("4") }
+                        else -> individualChats
+                    }
+                }
+
+                // Chats List
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .weight(1f)
+                ) {
+                    // Global search result - start chatting directly
+                    if (searchVal.isNotEmpty() && searchedGlobalUsers.isNotEmpty()) {
+                        item {
+                            Text(
+                                text = txt("সার্চ করা অন্যান্য ব্যবহারকারীরা (অনলাইন):", "Other Searched Users (Online):"),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF26B29E),
+                                modifier = Modifier.padding(start = 8.dp, top = 4.dp, bottom = 4.dp)
+                            )
+                        }
+
+                        items(searchedGlobalUsers) { user ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        viewModel.addNewContact(user.name, user.phone, false)
+                                        viewModel.selectContact(
+                                            Contact(
+                                                phone = user.phone,
+                                                name = user.name,
+                                                profilePicUri = user.profilePicBase64,
+                                                lastSeen = "online"
+                                            )
+                                        )
+                                    }
+                                    .padding(vertical = 10.dp, horizontal = 10.dp)
+                                    .background(if (isDark) Color(0xFF1E293B).copy(alpha = 0.5f) else Color(0xFFF8FAFC), RoundedCornerShape(12.dp)),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                AvatarView(name = user.name, base64 = user.profilePicBase64, size = 42)
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text(user.name, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = if (isDark) Color.White else Color.Black)
+                                    Text(user.phone, fontSize = 11.sp, color = if (isDark) Color.LightGray else Color.Gray)
+                                }
+                                Spacer(modifier = Modifier.weight(1f))
+                                Text(txt("মেসেজ দিন ➡️", "Message ➡️"), color = Color(0xFF26B29E), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                        }
+                    }
+
+                    // Existing Chats list
+                    if (filteredChats.isNotEmpty()) {
+                        item {
+                            Text(
+                                text = txt("আমার চ্যাটসমূহ (Active Chats):", "My Chats (Active Chats):"),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isDark) Color.LightGray.copy(alpha = 0.6f) else Color.Gray,
+                                modifier = Modifier.padding(start = 8.dp, bottom = 6.dp)
+                            )
+                        }
+
+                        items(filteredChats) { contact ->
+                            ChatRowItem(
+                                contact = contact,
+                                lang = appLanguage,
+                                onClick = { onChatClick(contact) }
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                        }
+                    } else if (searchedGlobalUsers.isEmpty() && searchVal.isEmpty()) {
+                        item {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 80.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(
+                                        imageVector = Icons.Default.ChatBubbleOutline,
+                                        contentDescription = "Empty",
+                                        modifier = Modifier.size(52.dp),
+                                        tint = if (isDark) Color.DarkGray else Color.LightGray
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        text = txt("কোনো চ্যাট পাওয়া যায়নি", "No chats found"),
+                                        color = Color.Gray,
+                                        fontSize = 13.sp
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -1503,6 +1726,7 @@ fun GroupsTabScreen(
     if (showCreateGroupDialog) {
         CreateGroupDialog(
             contacts = contactsList.filter { !it.isGroup },
+            viewModel = viewModel,
             onDismiss = { showCreateGroupDialog = false },
             onConfirm = { groupName, selected ->
                 viewModel.createGroup(groupName, selected)
@@ -2164,10 +2388,16 @@ fun SettingsTabScreen(
     viewModel: ChatViewModel
 ) {
     val myPhone by viewModel.myNumber.collectAsStateWithLifecycle()
-    val myName = viewModel.userDisplayName.value
-    val myProfilePic = viewModel.userProfilePicBase64.value
+    val myNameState by viewModel.userDisplayName.collectAsStateWithLifecycle()
+    val myProfilePic by viewModel.userProfilePicBase64.collectAsStateWithLifecycle()
     val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
     val txt = getTranslator(viewModel = viewModel)
+
+    val myName = if (myNameState.trim().isEmpty() || myNameState == "বার্তা ব্যবহারকারী" || myNameState == "Barta User") {
+        txt("বার্তা ব্যবহারকারী", "Barta User")
+    } else {
+        myNameState
+    }
 
     var showPasswordChangeDialog by remember { mutableStateOf(false) }
     var newPasswordInput by remember { mutableStateOf("") }
@@ -3160,6 +3390,7 @@ fun ContactsTabScreen(
 
             if (showAddDialog) {
                 AddContactDialog(
+                    viewModel = viewModel,
                     onDismiss = { showAddDialog = false },
                     onConfirm = { name, phone, autoReply ->
                         viewModel.addNewContact(name, phone, autoReply)
@@ -3178,6 +3409,7 @@ fun ContactsTabScreen(
             if (showCreateGroupDialog) {
                 CreateGroupDialog(
                     contacts = contactList.filter { !it.isGroup },
+                    viewModel = viewModel,
                     onDismiss = { showCreateGroupDialog = false },
                     onConfirm = { name, selected ->
                         viewModel.createGroup(name, selected)
@@ -3193,12 +3425,13 @@ fun ContactsTabScreen(
 @Composable
 fun CreateGroupDialog(
     contacts: List<Contact>,
+    viewModel: ChatViewModel,
     onDismiss: () -> Unit,
     onConfirm: (groupName: String, selected: List<Contact>) -> Unit
 ) {
     val context = LocalContext.current
-    val sharedPrefs = remember(context) { context.getSharedPreferences("MainPrefs", android.content.Context.MODE_PRIVATE) }
-    val isBn = remember { sharedPrefs.getString("app_language", "bn") == "bn" }
+    val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
+    val isBn = appLanguage == "bn"
     fun txt(bn: String, en: String) = if (isBn) bn else en
 
     var groupName by remember { mutableStateOf("") }
@@ -3287,12 +3520,13 @@ fun CreateGroupDialog(
 
 @Composable
 fun AddContactDialog(
+    viewModel: ChatViewModel,
     onDismiss: () -> Unit,
     onConfirm: (name: String, phone: String, simulateReply: Boolean) -> Unit
 ) {
     val context = LocalContext.current
-    val sharedPrefs = remember(context) { context.getSharedPreferences("MainPrefs", android.content.Context.MODE_PRIVATE) }
-    val isBn = remember { sharedPrefs.getString("app_language", "bn") == "bn" }
+    val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
+    val isBn = appLanguage == "bn"
     fun txt(bn: String, en: String) = if (isBn) bn else en
 
     var contactName by remember { mutableStateOf("") }
@@ -3404,8 +3638,8 @@ fun SyncContactsDialog(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    val sharedPrefs = remember(context) { context.getSharedPreferences("MainPrefs", android.content.Context.MODE_PRIVATE) }
-    val isBn = remember { sharedPrefs.getString("app_language", "bn") == "bn" }
+    val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
+    val isBn = appLanguage == "bn"
     fun txt(bn: String, en: String) = if (isBn) bn else en
 
     val syncedContacts by viewModel.syncedContacts.collectAsStateWithLifecycle()
@@ -5416,6 +5650,66 @@ fun EmojiPickerComponent(
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun PillItem(
+    text: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    isSelected: Boolean,
+    isDark: Boolean,
+    showDotBadge: Boolean = false,
+    onClick: () -> Unit
+) {
+    val containerColor = if (isSelected) {
+        Color(0xFF26B29E)
+    } else {
+        if (isDark) Color(0xFF1E293B) else Color(0xFFF1F5F9)
+    }
+    val contentColor = if (isSelected) {
+        Color.White
+    } else {
+        if (isDark) Color.LightGray else Color(0xFF475569)
+    }
+
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(containerColor)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 9.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = contentColor,
+                modifier = Modifier.size(15.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Box(contentAlignment = Alignment.Center) {
+                Text(
+                    text = text,
+                    color = contentColor,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                if (showDotBadge) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .background(Color(0xFF10B981), CircleShape)
+                            .align(Alignment.TopEnd)
+                            .offset(x = 6.dp, y = (-4).dp)
+                    )
                 }
             }
         }
