@@ -3857,6 +3857,7 @@ fun ChatWindowScreen(
     var showSelectVideoDialog by remember { mutableStateOf(false) }
     var selectedImageForPreview by remember { mutableStateOf<String?>(null) }
     var selectedVideoForPlayback by remember { mutableStateOf<String?>(null) }
+    var showEmojiPicker by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
     val photoPickerLauncher = rememberLauncherForActivityResult(
@@ -4200,12 +4201,15 @@ fun ChatWindowScreen(
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.SentimentSatisfiedAlt,
+                        imageVector = if (showEmojiPicker) Icons.Default.Keyboard else Icons.Default.SentimentSatisfiedAlt,
                         contentDescription = "Emoji select",
-                        tint = Color.Gray,
-                        modifier = Modifier.clickable {
-                            inputText += "😊 "
-                        }
+                        tint = if (showEmojiPicker) WhatsAppTealVal else Color.Gray,
+                        modifier = Modifier
+                            .clickable {
+                                focusManager.clearFocus()
+                                showEmojiPicker = !showEmojiPicker
+                            }
+                            .testTag("emoji_picker_toggle_button")
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     IconButton(
@@ -4221,7 +4225,12 @@ fun ChatWindowScreen(
                     Spacer(modifier = Modifier.width(4.dp))
                     TextField(
                         value = inputText,
-                        onValueChange = { inputText = it },
+                        onValueChange = {
+                            inputText = it
+                            if (showEmojiPicker) {
+                                showEmojiPicker = false
+                            }
+                        },
                         placeholder = { Text("বার্তা লিখুন...", color = Color.Gray) },
                         textStyle = androidx.compose.ui.text.TextStyle(color = Color.Black, fontSize = 16.sp),
                         colors = TextFieldDefaults.colors(
@@ -4275,6 +4284,15 @@ fun ChatWindowScreen(
                     modifier = Modifier.size(20.dp)
                 )
             }
+        }
+
+        if (showEmojiPicker) {
+            EmojiPickerComponent(
+                isBn = appLanguage == "bn",
+                onEmojiSelected = { emoji ->
+                    inputText += emoji
+                }
+            )
         }
     }
 
@@ -5202,4 +5220,119 @@ fun toBengaliDigits(english: String): String {
         result = result.replace(englishDigits[i], bengaliDigits[i])
     }
     return result
+}
+
+data class EmojiCategory(
+    val icon: String,
+    val nameBn: String,
+    val nameEn: String,
+    val emojis: List<String>
+)
+
+@Composable
+fun EmojiPickerComponent(
+    isBn: Boolean,
+    onEmojiSelected: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var selectedCategoryIndex by remember { mutableStateOf(0) }
+    
+    val categories = remember {
+        listOf(
+            EmojiCategory("😃", "হাসি ও অনুভূতি", "Smileys & Emotions", listOf("😊", "😂", "😎", "😍", "🥰", "😘", "😜", "🤔", "😴", "😭", "😡", "😱", "🤯", "🥳", "🙄", "🤫", "😋", "😜", "😏", "😷", "🤠", "🤢")),
+            EmojiCategory("👍", "হাত ও সংকেত", "Gestures & Signs", listOf("👍", "👎", "👌", "✌️", "🤝", "👏", "🙌", "🙏", "❤️", "💔", "🔥", "✨", "🎉", "🌟", "💡", "💯", "🦾", "💪", "👊", "✊", "🖐️", "✍️")),
+            EmojiCategory("🎈", "বিনোদন ও খাদ্য", "Activities & Food", listOf("⚽", "🏀", "🎮", "☕", "🍕", "🍔", "🍓", "🍎", "🍺", "🥂", "🛸", "🚀", "🚗", "✈️", "🎒", "🎓", "🍕", "🍰", "🍩", "🍪", "🍷", "🥤")),
+            EmojiCategory("🐱", "প্রাণী ও প্রকৃতি", "Animals & Nature", listOf("🐱", "🐶", "🐻", "🦁", "🐼", "🐒", "🐔", "🐙", "🐠", "🌸", "🌹", "🍀", "🍁", "🌍", "🌞", "🌙", "🌻", "🌴", "🌲", "🌈", "🔥", "❄️"))
+        )
+    }
+
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(240.dp),
+        shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFF0F2F5)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Category Selection Tabs
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFFE3E6EB))
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                categories.forEachIndexed { index, category ->
+                    val isSelected = selectedCategoryIndex == index
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { selectedCategoryIndex = index }
+                            .padding(vertical = 8.dp)
+                            .background(
+                                color = if (isSelected) Color.White else Color.Transparent,
+                                shape = RoundedCornerShape(8.dp)
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = category.icon,
+                            fontSize = 20.sp
+                        )
+                    }
+                }
+            }
+
+            // Category Title Label
+            Text(
+                text = if (isBn) categories[selectedCategoryIndex].nameBn else categories[selectedCategoryIndex].nameEn,
+                fontSize = 12.sp,
+                color = Color.Gray,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp)
+            )
+
+            // Emoji Grid
+            val currentCategory = categories[selectedCategoryIndex]
+            val chunkedEmojis = remember(selectedCategoryIndex) { currentCategory.emojis.chunked(6) }
+
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .padding(horizontal = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(chunkedEmojis) { rowEmojis ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        rowEmojis.forEach { emoji ->
+                            Box(
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clickable { onEmojiSelected(emoji) }
+                                    .testTag("emoji_picker_item_$emoji"),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = emoji,
+                                    fontSize = 26.sp
+                                )
+                            }
+                        }
+                        // Pad empty cells if the last row is incomplete
+                        if (rowEmojis.size < 6) {
+                            repeat(6 - rowEmojis.size) {
+                                Spacer(modifier = Modifier.size(44.dp))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
