@@ -1598,21 +1598,32 @@ fun GroupsTabScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // Group header with dynamic subtitle
+            // Group header with dynamic subtitle and custom logo
             TopAppBar(
                 title = {
-                    Column {
-                        Text(
-                            text = txt("গ্রুপ চ্যাট", "Group Chats"),
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                            fontSize = 18.sp
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Image(
+                            painter = painterResource(id = R.drawable.img_app_logo),
+                            contentDescription = "App Logo",
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .border(1.dp, Color.White, CircleShape)
                         )
-                        Text(
-                            text = "Logged in as ${myPhone ?: ""}",
-                            fontSize = 11.sp,
-                            color = Color(0xFFC8E6C9)
-                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = txt("গ্রুপ চ্যাট", "Group Chats"),
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                fontSize = 18.sp
+                            )
+                            Text(
+                                text = "Logged in as ${myPhone ?: ""}",
+                                fontSize = 11.sp,
+                                color = Color(0xFFC8E6C9)
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = WhatsAppTealVal)
@@ -1723,6 +1734,7 @@ fun GroupsTabScreen(
 fun StatusTabScreen(
     viewModel: ChatViewModel
 ) {
+    val isDark by viewModel.isDarkMode.collectAsStateWithLifecycle()
     val activeStatuses by viewModel.activeStatuses.collectAsStateWithLifecycle()
     val myPhoneState by viewModel.myNumber.collectAsStateWithLifecycle()
     val myPhone = myPhoneState ?: ""
@@ -1800,8 +1812,8 @@ fun StatusTabScreen(
                 // Small FAB for text status
                 FloatingActionButton(
                     onClick = { showAddTextStatusDialog = true },
-                    containerColor = Color(0xFFF0F2F5),
-                    contentColor = WhatsAppTealVal,
+                    containerColor = if (isDark) Color(0xFF1E293B) else Color(0xFFF0F2F5),
+                    contentColor = if (isDark) Color.White else WhatsAppTealVal,
                     modifier = Modifier.size(44.dp).testTag("add_text_status_fab")
                 ) {
                     Icon(Icons.Default.Edit, contentDescription = "Add Text Status", modifier = Modifier.size(20.dp))
@@ -1827,22 +1839,33 @@ fun StatusTabScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .background(Color(0xFFF0F2F5))
+                .background(if (isDark) Color(0xFF090D16) else Color(0xFFF0F2F5))
         ) {
             TopAppBar(
                 title = {
-                    Column {
-                        Text(
-                            text = txt("স্ট্যাটাস", "Status"),
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                            fontSize = 18.sp
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Image(
+                            painter = painterResource(id = R.drawable.img_app_logo),
+                            contentDescription = "App Logo",
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .border(1.dp, Color.White, CircleShape)
                         )
-                        Text(
-                            text = "Logged in as $myPhone",
-                            fontSize = 11.sp,
-                            color = Color(0xFFC8E6C9)
-                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = txt("স্ট্যাটাস", "Status"),
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                fontSize = 18.sp
+                            )
+                            Text(
+                                text = "Logged in as $myPhone",
+                                fontSize = 11.sp,
+                                color = Color(0xFFC8E6C9)
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = WhatsAppTealVal)
@@ -1853,7 +1876,7 @@ fun StatusTabScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 8.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
+                colors = CardDefaults.cardColors(containerColor = if (isDark) Color(0xFF1E293B) else Color.White),
                 shape = RectangleShape
             ) {
                 Row(
@@ -1888,7 +1911,7 @@ fun StatusTabScreen(
                                 modifier = Modifier
                                     .size(20.dp)
                                     .background(WhatsAppGreenVal, shape = CircleShape)
-                                    .border(1.5.dp, Color.White, CircleShape),
+                                    .border(1.5.dp, if (isDark) Color(0xFF1E293B) else Color.White, CircleShape),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(Icons.Default.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
@@ -1899,7 +1922,7 @@ fun StatusTabScreen(
                     Spacer(modifier = Modifier.width(14.dp))
 
                     Column {
-                        Text(txt("আমার স্ট্যাটাস", "My Status"), fontWeight = FontWeight.Bold, color = Color.Black, fontSize = 16.sp)
+                        Text(txt("আমার স্ট্যাটাস", "My Status"), fontWeight = FontWeight.Bold, color = if (isDark) Color.White else Color.Black, fontSize = 16.sp)
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = if (myStatuses.isEmpty()) txt("স্ট্যাটাস আপডেট করতে টাচ করুন", "Tap to add status update") else {
@@ -1911,7 +1934,7 @@ fun StatusTabScreen(
                                     "${latest.text} • ${formatTimeAgo(latest.timestamp)}"
                                 }
                             },
-                            color = Color.Gray,
+                            color = if (isDark) Color.LightGray else Color.Gray,
                             fontSize = 13.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -1925,13 +1948,13 @@ fun StatusTabScreen(
                 text = txt("সাম্প্রতিক আপডেটসমূহ (Recent Updates):", "Recent Updates (Recent Updates):"),
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color.Gray,
+                color = if (isDark) Color.LightGray else Color.Gray,
                 modifier = Modifier.padding(start = 16.dp, bottom = 8.dp, top = 8.dp)
             )
 
             Card(
                 modifier = Modifier.fillMaxWidth().weight(1f),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
+                colors = CardDefaults.cardColors(containerColor = if (isDark) Color(0xFF1E293B) else Color.White),
                 shape = RectangleShape
             ) {
                 if (otherUsersStatuses.isEmpty()) {
@@ -1941,7 +1964,7 @@ fun StatusTabScreen(
                     ) {
                         Text(
                             text = txt("কোনো সাম্প্রতিক স্ট্যাটাস আপডেট নেই", "No recent status updates"),
-                            color = Color.Gray,
+                            color = if (isDark) Color.LightGray else Color.Gray,
                             fontSize = 14.sp
                         )
                     }
@@ -1977,14 +2000,14 @@ fun StatusTabScreen(
                                 Spacer(modifier = Modifier.width(14.dp))
 
                                 Column {
-                                    Text(latestStatus.name, fontWeight = FontWeight.Bold, color = Color.Black, fontSize = 15.sp)
+                                    Text(latestStatus.name, fontWeight = FontWeight.Bold, color = if (isDark) Color.White else Color.Black, fontSize = 15.sp)
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Text(
                                         text = if (!latestStatus.mediaUrl.isNullOrEmpty()) {
                                             val actType = if (appLanguage == "bn") "📷 ফটো আপডেট • " else "📷 Photo update • "
                                             actType + formatTimeAgo(latestStatus.timestamp)
                                         } else latestStatus.text,
-                                        color = Color.Gray,
+                                        color = if (isDark) Color.LightGray else Color.Gray,
                                         fontSize = 12.sp,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
@@ -1993,7 +2016,7 @@ fun StatusTabScreen(
                             }
 
                             if (idx < entries.size - 1) {
-                                HorizontalDivider(color = Color(0xFFF1F1F1), modifier = Modifier.padding(start = 82.dp))
+                                HorizontalDivider(color = if (isDark) Color(0xFF1E293B) else Color(0xFFF1F1F1), modifier = Modifier.padding(start = 82.dp))
                             }
                         }
                     }
@@ -2114,11 +2137,14 @@ fun StatusTabScreen(
                         value = photoStatusInputText,
                         onValueChange = { photoStatusInputText = it },
                         modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text(txt("ক্যাপশন যোগ করুন (ঐচ্ছিক)...", "Add caption (optional)...")) },
+                        placeholder = { Text(txt("ক্যাপশন যোগ করুন (ঐচ্ছিক)...", "Add caption (optional)..."), color = if (isDark) Color.LightGray else Color.Gray) },
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.Black,
-                            unfocusedTextColor = Color.Black,
-                            focusedBorderColor = WhatsAppTealVal
+                            focusedTextColor = if (isDark) Color.White else Color.Black,
+                            unfocusedTextColor = if (isDark) Color.White else Color.Black,
+                            focusedBorderColor = WhatsAppTealVal,
+                            unfocusedBorderColor = if (isDark) Color.Gray else Color.LightGray,
+                            focusedContainerColor = if (isDark) Color(0xFF1E293B) else Color.Transparent,
+                            unfocusedContainerColor = if (isDark) Color(0xFF1E293B) else Color.Transparent
                         )
                     )
                 }
@@ -2392,18 +2418,29 @@ fun SettingsTabScreen(
     ) {
         TopAppBar(
             title = {
-                Column {
-                    Text(
-                        text = txt("সেটিংস", "Settings"),
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        fontSize = 18.sp
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Image(
+                        painter = painterResource(id = R.drawable.img_app_logo),
+                        contentDescription = "App Logo",
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .border(1.dp, Color.White, CircleShape)
                     )
-                    Text(
-                        text = txt("লগইন মোবাইল নম্বরঃ $myPhone", "Logged in as: $myPhone"),
-                        fontSize = 12.sp,
-                        color = Color.White.copy(alpha = 0.8f)
-                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = txt("সেটিংস", "Settings"),
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            fontSize = 18.sp
+                        )
+                        Text(
+                            text = txt("লগইন মোবাইল নম্বরঃ $myPhone", "Logged in as: $myPhone"),
+                            fontSize = 12.sp,
+                            color = Color.White.copy(alpha = 0.8f)
+                        )
+                    }
                 }
             },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = WhatsAppTealVal)
@@ -2905,7 +2942,25 @@ fun ContactsTabScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(txt("নতুন চ্যাট পরিচিতি", "New Conversation"), color = Color.White, fontWeight = FontWeight.Bold) },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Image(
+                            painter = painterResource(id = R.drawable.img_app_logo),
+                            contentDescription = "App Logo",
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .border(1.dp, Color.White, CircleShape)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = txt("নতুন চ্যাট পরিচিতি", "New Conversation"),
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp
+                        )
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = WhatsAppTealVal),
                 actions = {
                     IconButton(
@@ -3762,12 +3817,23 @@ fun ProfileTabScreen(
     ) {
         TopAppBar(
             title = {
-                Text(
-                    text = txt("প্রোফাইল সংশোধন (Edit Profile)", "Edit Profile"),
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Image(
+                        painter = painterResource(id = R.drawable.img_app_logo),
+                        contentDescription = "App Logo",
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .border(1.dp, Color.White, CircleShape)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = txt("প্রোফাইল সংশোধন (Edit Profile)", "Edit Profile"),
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp
+                    )
+                }
             },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = WhatsAppTealVal)
         )
