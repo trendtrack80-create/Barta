@@ -68,6 +68,8 @@ import com.example.data.LocalUser
 import com.example.data.Message
 import com.example.viewmodel.ChatViewModel
 import com.example.ui.theme.*
+import androidx.compose.ui.res.painterResource
+import com.example.R
 import androidx.activity.result.PickVisualMediaRequest
 import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
@@ -368,19 +370,14 @@ fun GreetingOnboardingScreen(
                     .fillMaxWidth()
                     .padding(top = 16.dp)
             ) {
-                Box(
+                Image(
+                    painter = painterResource(id = R.drawable.img_app_logo),
+                    contentDescription = "App Logo",
                     modifier = Modifier
                         .size(38.dp)
-                        .background(WhatsAppTealVal, CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Chat,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
+                        .clip(CircleShape)
+                        .border(1.dp, WhatsAppTealVal, CircleShape)
+                )
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
                     text = txt("বার্তা (Barta)", "Barta (Chat)"),
@@ -749,19 +746,14 @@ fun AuthScreen(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Box(
+        Image(
+            painter = painterResource(id = R.drawable.img_app_logo),
+            contentDescription = "App Logo",
             modifier = Modifier
                 .size(90.dp)
-                .background(Color(0xFFE8F5E9), shape = CircleShape),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.Chat,
-                contentDescription = "Logo",
-                tint = WhatsAppGreenVal,
-                modifier = Modifier.size(54.dp)
-            )
-        }
+                .clip(CircleShape)
+                .border(2.5.dp, WhatsAppGreenVal, CircleShape)
+        )
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -1239,25 +1231,15 @@ fun ChatsTabScreen(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Left avatar logo with gradient
-                Box(
+                // Left avatar logo using the premium custom app logo image
+                Image(
+                    painter = painterResource(id = R.drawable.img_app_logo),
+                    contentDescription = "App Logo",
                     modifier = Modifier
                         .size(52.dp)
-                        .background(
-                            brush = Brush.linearGradient(
-                                colors = listOf(Color(0xFF059669), Color(0xFF84CC16))
-                            ),
-                            shape = CircleShape
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.Chat,
-                        contentDescription = "Logo",
-                        tint = Color.White,
-                        modifier = Modifier.size(26.dp)
-                    )
-                }
+                        .clip(CircleShape)
+                        .border(1.5.dp, Color.White, CircleShape)
+                )
 
                 Spacer(modifier = Modifier.width(12.dp))
 
@@ -2312,7 +2294,7 @@ fun StatusTabScreen(
                                 LinearProgressIndicator(
                                     progress = { segmentProgress },
                                     color = Color.White,
-                                  trackColor = Color.White.copy(alpha = 0.3f),
+                                    trackColor = Color.White.copy(alpha = 0.3f),
                                     modifier = Modifier
                                         .weight(1f)
                                         .height(4.dp)
@@ -2402,22 +2384,6 @@ fun SettingsTabScreen(
     var showPasswordChangeDialog by remember { mutableStateOf(false) }
     var newPasswordInput by remember { mutableStateOf("") }
 
-    // Firebase states
-    val firebaseApiKey = viewModel.firebaseApiKey.collectAsStateWithLifecycle()
-    val firebaseProjectId = viewModel.firebaseProjectId.collectAsStateWithLifecycle()
-    val firebaseAppId = viewModel.firebaseAppId.collectAsStateWithLifecycle()
-
-    var editingApiKey by remember { mutableStateOf(firebaseApiKey.value) }
-    var editingProjectId by remember { mutableStateOf(firebaseProjectId.value) }
-    var editingAppId by remember { mutableStateOf(firebaseAppId.value) }
-
-    // Sync editing states if database values change
-    LaunchedEffect(firebaseApiKey.value, firebaseProjectId.value, firebaseAppId.value) {
-        editingApiKey = firebaseApiKey.value
-        editingProjectId = firebaseProjectId.value
-        editingAppId = firebaseAppId.value
-    }
-
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -2434,72 +2400,42 @@ fun SettingsTabScreen(
                         fontSize = 18.sp
                     )
                     Text(
-                        text = txt("লগইন মোবাইল নম্বরঃ ${myPhone ?: ""}", "Logged in as ${myPhone ?: ""}"),
-                        fontSize = 11.sp,
-                        color = Color(0xFFC8E6C9)
+                        text = txt("লগইন মোবাইল নম্বরঃ $myPhone", "Logged in as: $myPhone"),
+                        fontSize = 12.sp,
+                        color = Color.White.copy(alpha = 0.8f)
                     )
                 }
             },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = WhatsAppTealVal)
         )
 
-        // Profile quick navigation card
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Profile Display Card with Password Change trigger
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 12.dp),
+                .padding(horizontal = 16.dp, vertical = 8.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            shape = RectangleShape
+            shape = RoundedCornerShape(12.dp)
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable {
-                        viewModel.selectTab("profile")
-                    }
                     .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                AvatarView(name = myName, base64 = myProfilePic, size = 56)
+                AvatarView(name = myName, base64 = myProfilePic, size = 60)
                 Spacer(modifier = Modifier.width(16.dp))
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(myName, fontWeight = FontWeight.Bold, fontSize = 17.sp, color = MaterialTheme.colorScheme.onSurface)
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(text = myPhone ?: "", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f), fontSize = 13.sp)
+                    Text(myName, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = MaterialTheme.colorScheme.onSurface)
+                    Text(myPhone ?: "", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                 }
-                Icon(Icons.Default.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
-            }
-        }
-
-        Text(
-            text = txt("অ্যাকাউন্ট ও নিরাপত্তা", "Account & Security"),
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-            modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
-        )
-
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 12.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            shape = RectangleShape
-        ) {
-            Column {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { showPasswordChangeDialog = true }
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                IconButton(
+                    onClick = { showPasswordChangeDialog = true },
+                    modifier = Modifier.testTag("change_password_button")
                 ) {
-                    Icon(Icons.Default.Lock, contentDescription = null, tint = WhatsAppTealVal)
-                    Spacer(modifier = Modifier.width(14.dp))
-                    Column {
-                        Text(txt("পাসওয়ার্ড পরিবর্তন করুন", "Change Password"), fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurface)
-                        Text(txt("আপনার ৬-৮ ডিজিটের পাসওয়ার্ড আপডেট করুন", "Update your 6-8 character password"), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                    }
+                    Icon(Icons.Default.Edit, contentDescription = "Change Password", tint = WhatsAppTealVal)
                 }
             }
         }
@@ -2509,7 +2445,7 @@ fun SettingsTabScreen(
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-            modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
+            modifier = Modifier.padding(start = 16.dp, bottom = 8.dp, top = 16.dp)
         )
 
         Card(
@@ -2640,7 +2576,7 @@ fun SettingsTabScreen(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 12.dp),
+                .padding(bottom = 24.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             shape = RectangleShape
         ) {
@@ -2752,97 +2688,6 @@ fun SettingsTabScreen(
                         },
                         colors = SwitchDefaults.colors(checkedThumbColor = WhatsAppGreenVal, checkedTrackColor = WhatsAppGreenVal.copy(alpha = 0.4f))
                     )
-                }
-            }
-        }
-
-        Text(
-            text = txt("ফায়ারবেস ক্লাউড কানেকশন", "Firebase Cloud Connection"),
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-            modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
-        )
-
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            shape = RectangleShape
-        ) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(txt("রিয়েল টাইম সিংক্রোনাইজেশন ক্লাউড ডাটাবেস সেটিংস এখানে পরিবর্তন করুন:", "Configure real-time cloud synchronization database parameters here:"), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-
-                OutlinedTextField(
-                    value = editingApiKey,
-                    onValueChange = { editingApiKey = it },
-                    label = { Text("API Key") },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                        focusedLabelColor = WhatsAppTealVal,
-                        unfocusedLabelColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                OutlinedTextField(
-                    value = editingProjectId,
-                    onValueChange = { editingProjectId = it },
-                    label = { Text("Project ID") },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                        focusedLabelColor = WhatsAppTealVal,
-                        unfocusedLabelColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                OutlinedTextField(
-                    value = editingAppId,
-                    onValueChange = { editingAppId = it },
-                    label = { Text("App ID") },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                        focusedLabelColor = WhatsAppTealVal,
-                        unfocusedLabelColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Button(
-                        modifier = Modifier.weight(1f),
-                        onClick = {
-                            viewModel.saveFirebaseConfig(editingApiKey, editingProjectId, editingAppId)
-                            Toast.makeText(viewModel.getApplication(), txt("ক্লাউড কনফিগারেশন সেভ হয়েছে!", "Cloud configuration saved successfully!"), Toast.LENGTH_SHORT).show()
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = WhatsAppGreenVal)
-                    ) {
-                        Text(txt("সেভ করুন", "Save"), color = Color.White, fontWeight = FontWeight.Bold)
-                    }
-
-                    OutlinedButton(
-                        modifier = Modifier.weight(1f),
-                        onClick = {
-                            editingApiKey = ""
-                            editingProjectId = ""
-                            editingAppId = ""
-                            viewModel.saveFirebaseConfig("", "", "")
-                            Toast.makeText(viewModel.getApplication(), txt("ক্লাউড কনফিগারেশন মুছে ফেলা হয়েছে!", "Cloud configuration cleared successfully!"), Toast.LENGTH_SHORT).show()
-                        }
-                    ) {
-                        Text(txt("মুছুন", "Clear"))
-                    }
                 }
             }
         }
