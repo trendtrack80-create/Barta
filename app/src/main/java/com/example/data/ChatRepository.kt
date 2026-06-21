@@ -44,7 +44,7 @@ class ChatRepository(
             var appId = sharedPrefs.getString("firebase_app_id", "") ?: ""
 
             if (apiKey.isEmpty() || projectId.isEmpty() || appId.isEmpty()) {
-                apiKey = "AIzaSyCLC-BRtWNzcKFW0Htda4pbNVhmibB21NU"
+                apiKey = com.example.BuildConfig.FIREBASE_API_KEY
                 projectId = "barta-chat-927ec"
                 appId = "1:799684230284:web:3322149ca4ff4c91594fa9"
                 
@@ -137,7 +137,7 @@ class ChatRepository(
         var projectId = sharedPrefs.getString("firebase_project_id", "") ?: ""
         var appId = sharedPrefs.getString("firebase_app_id", "") ?: ""
         if (apiKey.isEmpty() || projectId.isEmpty() || appId.isEmpty()) {
-            apiKey = "AIzaSyCLC-BRtWNzcKFW0Htda4pbNVhmibB21NU"
+            apiKey = com.example.BuildConfig.FIREBASE_API_KEY
             projectId = "barta-chat-927ec"
             appId = "1:799684230284:web:3322149ca4ff4c91594fa9"
             sharedPrefs.edit()
@@ -774,28 +774,79 @@ class ChatRepository(
         db.collection("users").document(contact.phone).set(data)
     }
 
-    private fun triggerChatbotResponse(userPhone: String, botPhone: String, userMessage: String) {
+    fun triggerChatbotResponse(userPhone: String, botPhone: String, userMessage: String) {
         repositoryScope.launch {
-            contactDao.updateTypingStatus(botPhone, "typing...")
-            kotlinx.coroutines.delay(1800)
-            
-            val userName = sharedPrefs.getString("logged_user_display_name", "")?.trim().let { if (it.isNullOrEmpty()) "বার্তা ব্যবহারকারী" else it }
-            val userStatus = sharedPrefs.getString("logged_user_status_message", "বার্তা (Chat) ব্যবহার করছি!")?.trim().let { if (it.isNullOrEmpty()) "বার্তা (Chat) ব্যবহার করছি!" else it }
+            try {
+                contactDao.updateTypingStatus(botPhone, "typing...")
+                
+                // Fetch current language settings to respect Bengali / English output context
+                val language = sharedPrefs.getString("app_language", "bn") ?: "bn"
+                
+                // Retrieve last messages for context window pipeline
+                val recentMessagesList = try {
+                    messageDao.getMessagesForChat(userPhone, botPhone).firstOrNull() ?: emptyList()
+                } catch (e: Exception) {
+                    emptyList()
+                }
 
-            val replyText = generateBotReply(userMessage, userName, userStatus)
-            val messageId = UUID.randomUUID().toString()
-            val timestamp = System.currentTimeMillis()
-            val replyMessage = Message(
-                id = messageId,
-                senderId = botPhone,
-                receiverId = userPhone,
-                text = replyText,
-                timestamp = timestamp,
-                senderName = "বার্তা সহকারী (Bot) 🤖"
-            )
-            messageDao.insertMessage(replyMessage)
-            contactDao.updateLastMessage(botPhone, replyText, timestamp)
-            contactDao.updateTypingStatus(botPhone, "")
+                // Call the secure GeminiService (CORS and fallback automated!)
+                val replyText = try {
+                    GeminiService.getGeminiResponse(
+                        context = context,
+                        userPhone = userPhone,
+                        userMessage = userMessage,
+                        previousMessages = recentMessagesList,
+                        language = language
+                    )
+                } catch (e: Exception) {
+                    Log.e("BartaChat", "Gemini error: ${e.message}", e)
+                    if (language == "bn") {
+                        "দুঃখিত, সংযোগে ত্রুটি ঘটেছে! এআই ক্লাউড ফাংশন বা ইন্টারনেট কানেকশন চেক করুন।"
+                    } else {
+                        "Sorry, a connection error occurred. Please verify your AI Cloud Function URL or internet connection."
+                    }
+                }
+
+                val messageId = UUID.randomUUID().toString()
+                val timestamp = System.currentTimeMillis()
+                val replyMessage = Message(
+                    id = messageId,
+                    senderId = botPhone,
+                    receiverId = userPhone,
+                    text = replyText,
+                    timestamp = timestamp,
+                    senderName = if (language == "bn") "বার্তা সহকারী (Bot) 🤖" else "Barta Assistant 🤖"
+                )
+                messageDao.insertMessage(replyMessage)
+                contactDao.updateLastMessage(botPhone, replyText, timestamp)
+
+                // Save companion response to Firestore (cloud backend sync for cloud history preservation)
+                firestore?.let { db ->
+                    val chatId = getChatId(userPhone, botPhone)
+                    val firestoreMsg = hashMapOf(
+                        "id" to messageId,
+                        "senderId" to botPhone,
+                        "receiverId" to userPhone,
+                        "text" to replyText,
+                        "timestamp" to timestamp,
+                        "isRead" to false,
+                        "senderName" to (if (language == "bn") "বার্তা সহকারী (Bot) 🤖" else "Barta Assistant 🤖"),
+                        "mediaUrl" to "",
+                        "mediaType" to "",
+                        "isDeletedForEveryone" to false
+                    )
+                    db.collection("chats")
+                        .document(chatId)
+                        .collection("messages")
+                        .document(messageId)
+                        .set(firestoreMsg)
+                }
+
+            } catch (e: Exception) {
+                Log.e("BartaChat", "Exception inside chatbot execution pipeline", e)
+            } finally {
+                contactDao.updateTypingStatus(botPhone, "")
+            }
         }
     }
 

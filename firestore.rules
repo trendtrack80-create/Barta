@@ -1,0 +1,52 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Helper to check if request is from the self-user phone
+    function isOwner(phone) {
+      return isAuthenticated() && (request.auth.uid == phone || request.auth.token.phone_number == phone);
+    }
+
+    // User profiles security
+    match /users/{phone} {
+      allow read, write: if true; // Allowed so contacts lookups can query registered usernames/presence
+      
+      // AI chats of specific user is strictly private
+      match /ai_conversations/{msgId} {
+        allow read, write: if isAuthenticated() && (request.auth.uid == phone);
+      }
+    }
+
+    // Group chats security
+    match /groups/{groupId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      // Only group participants or admin creator can edit group details
+      allow update, delete: if isAuthenticated() && 
+        (resource.data.creator == request.auth.uid || request.auth.uid in resource.data.participants.split(","));
+    }
+
+    // Secure peer-to-peer chats
+    match /chats/{chatId} {
+      // Allow read/write if requester phone is one of the participant array elements
+      allow read, write: if isAuthenticated() && 
+        (request.auth.uid in resource.data.participants || !exists(/databases/$(database)/documents/chats/$(chatId)));
+
+      match /messages/{messageId} {
+        allow read, write: if isAuthenticated();
+      }
+    }
+
+    // Chat Status updates
+    match /statuses/{statusId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated() && request.resource.data.phone == request.auth.uid;
+      allow delete: if isAuthenticated() && resource.data.phone == request.auth.uid;
+    }
+  }
+}

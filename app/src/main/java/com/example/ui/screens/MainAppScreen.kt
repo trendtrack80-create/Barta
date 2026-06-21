@@ -737,6 +737,67 @@ fun AuthScreen(
         }
     )
 
+    var tempCameraFileSignUp by remember { mutableStateOf<java.io.File?>(null) }
+    var tempCameraUriSignUp by remember { mutableStateOf<android.net.Uri?>(null) }
+
+    val cameraLauncherSignUp = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture(),
+        onResult = { success ->
+            if (success) {
+                val file = tempCameraFileSignUp
+                if (file != null && file.exists() && file.length() > 0) {
+                    profilePicBase64 = file.absolutePath
+                    showPhotoSelector = false
+                    Toast.makeText(context, txt("ক্যামেরা থেকে ছবি সফলভাবে যুক্ত হয়েছে!", "Image successfully captured from camera!"), Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, txt("ছবি ফাইল তৈরি করা যায়নি!", "Failed to create picture file!"), Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                Toast.makeText(context, txt("ছবি ধারণ বাতিল বা ব্যর্থ হয়েছে!", "Camera capture cancelled or failed!"), Toast.LENGTH_SHORT).show()
+            }
+        }
+    )
+
+    val cameraPermissionLauncherSignUp = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+        onResult = { isGranted ->
+            if (isGranted) {
+                try {
+                    val file = java.io.File(context.cacheDir, "signup_profile_${System.currentTimeMillis()}.jpg")
+                    val uri = androidx.core.content.FileProvider.getUriForFile(context, "com.example.fileprovider", file)
+                    tempCameraFileSignUp = file
+                    tempCameraUriSignUp = uri
+                    cameraLauncherSignUp.launch(uri)
+                } catch (e: Exception) {
+                    Toast.makeText(context, txt("ক্যামেরা ছবি প্রস্তুত করতে ব্যর্থ হয়েছে!", "Failed to prepare camera file!"), Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                Toast.makeText(context, txt("ক্যামেরা ব্যবহারের অনুমতি প্রয়োজন!", "Camera permission is required!"), Toast.LENGTH_SHORT).show()
+            }
+        }
+    )
+
+    val launchCameraFlowSignUp: () -> Unit = {
+        val hasCamPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+            context,
+            android.Manifest.permission.CAMERA
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+        if (hasCamPermission) {
+            try {
+                val file = java.io.File(context.cacheDir, "signup_profile_${System.currentTimeMillis()}.jpg")
+                val uri = androidx.core.content.FileProvider.getUriForFile(context, "com.example.fileprovider", file)
+                tempCameraFileSignUp = file
+                tempCameraUriSignUp = uri
+                cameraLauncherSignUp.launch(uri)
+            } catch (e: Exception) {
+                Toast.makeText(context, txt("ক্যামেরা ছবি প্রস্তুত করতে ব্যর্থ হয়েছে!", "Failed to prepare camera file!"), Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            cameraPermissionLauncherSignUp.launch(android.Manifest.permission.CAMERA)
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -858,12 +919,21 @@ fun AuthScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         if (profilePicBase64.isNotEmpty()) {
-                            Image(
-                                imageVector = getAvatarVector(profilePicBase64),
-                                contentDescription = "Profile Picture",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
+                            if (profilePicBase64.startsWith("/") || profilePicBase64.startsWith("content:") || profilePicBase64.startsWith("file:")) {
+                                AsyncImage(
+                                    model = profilePicBase64,
+                                    contentDescription = "Profile Picture",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Image(
+                                    imageVector = getAvatarVector(profilePicBase64),
+                                    contentDescription = "Profile Picture",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
                         } else {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Icon(Icons.Default.AddAPhoto, contentDescription = "Upload Picture", tint = Color.Gray, modifier = Modifier.size(24.dp))
@@ -1069,19 +1139,39 @@ fun AuthScreen(
                         }
                     }
                     Spacer(modifier = Modifier.height(16.dp))
-                    Button(
-                        onClick = {
-                            signUpPhotoPickerLauncher.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                            )
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = WhatsAppTealVal),
+                    Row(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(Icons.Default.PhotoLibrary, contentDescription = null, tint = Color.White)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(txt("গ্যালারি থেকে ছবি নিন", "Pick from Gallery"), color = Color.White, fontWeight = FontWeight.Bold)
+                        Button(
+                            onClick = {
+                                signUpPhotoPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = WhatsAppTealVal),
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
+                        ) {
+                            Icon(Icons.Default.PhotoLibrary, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(txt("গ্যালারি", "Gallery"), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        Button(
+                            onClick = {
+                                launchCameraFlowSignUp()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = WhatsAppGreenVal),
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
+                        ) {
+                            Icon(Icons.Default.PhotoCamera, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(txt("ক্যামেরা", "Camera"), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             },
@@ -2729,6 +2819,72 @@ fun SettingsTabScreen(
             }
         }
 
+        Text(
+            text = txt("এআই সহকারী কনফিগারেশন", "AI Assistant Configuration"),
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+            modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
+        )
+
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            shape = RectangleShape
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                val functionsUrl by viewModel.firebaseFunctionsBaseUrl.collectAsStateWithLifecycle()
+                var inputUrl by remember { mutableStateOf(functionsUrl) }
+                
+                LaunchedEffect(functionsUrl) {
+                    inputUrl = functionsUrl
+                }
+
+                Text(
+                    text = txt("ফায়ারবেস ক্লাউড ফাংশন ইউআরএল", "Firebase Cloud Functions URL"),
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = txt(
+                        "আপনার এআই পিন সুরক্ষিত রাখতে deployed ক্লাউড ফাংশনের বেস ইউআরএল দিন। ফাঁকা রাখলে এটি অ্যাপের ভেতর থেকে সুরক্ষিত সিস্টেমে সরাসরি কাজ করবে।",
+                        "Configure your Cloud Function base URL for advanced production security. Leaving it blank triggers secure app-level fallback mode."
+                    ),
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = inputUrl,
+                    onValueChange = { inputUrl = it },
+                    placeholder = { Text("https://us-central1-barta-chat-927ec.cloudfunctions.net") },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        focusedBorderColor = WhatsAppTealVal,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                    ),
+                    modifier = Modifier.fillMaxWidth().testTag("functions_url_input")
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Button(
+                    onClick = {
+                        viewModel.saveFirebaseFunctionsUrl(inputUrl)
+                        Toast.makeText(viewModel.getApplication(), txt("কনফিগারেশন সফলভাবে সংরক্ষিত হয়েছে!", "Configuration successfully saved!"), Toast.LENGTH_SHORT).show()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = WhatsAppTealVal),
+                    modifier = Modifier.align(Alignment.End).testTag("save_functions_url_button")
+                ) {
+                    Text(txt("সংরক্ষণ করুন", "Save"), color = Color.White)
+                }
+            }
+        }
+
         // Logout Area
         Card(
             modifier = Modifier
@@ -3806,6 +3962,67 @@ fun ProfileTabScreen(
         }
     )
 
+    var tempCameraFileProfile by remember { mutableStateOf<java.io.File?>(null) }
+    var tempCameraUriProfile by remember { mutableStateOf<android.net.Uri?>(null) }
+
+    val cameraLauncherProfile = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture(),
+        onResult = { success ->
+            if (success) {
+                val file = tempCameraFileProfile
+                if (file != null && file.exists() && file.length() > 0) {
+                    profilePicState = file.absolutePath
+                    showPhotoSelectorProfile = false
+                    Toast.makeText(context, txt("ক্যামেরা থেকে প্রোফাইল ছবি নেওয়া হয়েছে!", "Profile picture selected from camera!"), Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, txt("ছবি ফাইল তৈরি করা যায়নি!", "Failed to create picture file!"), Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                Toast.makeText(context, txt("ছবি ধারণ বাতিল বা ব্যর্থ হয়েছে!", "Camera capture cancelled or failed!"), Toast.LENGTH_SHORT).show()
+            }
+        }
+    )
+
+    val cameraPermissionLauncherProfile = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+        onResult = { isGranted ->
+            if (isGranted) {
+                try {
+                    val file = java.io.File(context.cacheDir, "profile_${System.currentTimeMillis()}.jpg")
+                    val uri = androidx.core.content.FileProvider.getUriForFile(context, "com.example.fileprovider", file)
+                    tempCameraFileProfile = file
+                    tempCameraUriProfile = uri
+                    cameraLauncherProfile.launch(uri)
+                } catch (e: Exception) {
+                    Toast.makeText(context, txt("ক্যামেরা ছবি প্রস্তুত করতে ব্যর্থ হয়েছে!", "Failed to prepare camera file!"), Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                Toast.makeText(context, txt("ক্যামেরা ব্যবহারের অনুমতি প্রয়োজন!", "Camera permission is required!"), Toast.LENGTH_SHORT).show()
+            }
+        }
+    )
+
+    val launchCameraFlowProfile: () -> Unit = {
+        val hasCamPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+            context,
+            android.Manifest.permission.CAMERA
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+        if (hasCamPermission) {
+            try {
+                val file = java.io.File(context.cacheDir, "profile_${System.currentTimeMillis()}.jpg")
+                val uri = androidx.core.content.FileProvider.getUriForFile(context, "com.example.fileprovider", file)
+                tempCameraFileProfile = file
+                tempCameraUriProfile = uri
+                cameraLauncherProfile.launch(uri)
+            } catch (e: Exception) {
+                Toast.makeText(context, txt("ক্যামেরা ছবি প্রস্তুত করতে ব্যর্থ হয়েছে!", "Failed to prepare camera file!"), Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            cameraPermissionLauncherProfile.launch(android.Manifest.permission.CAMERA)
+        }
+    }
+
     LaunchedEffect(initialDisplayName, initialStatusMessage, initialProfilePic) {
         displayNameInput = initialDisplayName
         statusMessageInput = initialStatusMessage
@@ -3864,11 +4081,20 @@ fun ProfileTabScreen(
                                 .border(2.5.dp, WhatsAppGreenVal, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
-                            Image(
-                                imageVector = getAvatarVector(profilePicState),
-                                contentDescription = "Profile Picture",
-                                modifier = Modifier.fillMaxSize()
-                            )
+                            if (profilePicState.startsWith("/") || profilePicState.startsWith("content:") || profilePicState.startsWith("file:")) {
+                                AsyncImage(
+                                    model = profilePicState,
+                                    contentDescription = "Profile Picture",
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Image(
+                                    imageVector = getAvatarVector(profilePicState),
+                                    contentDescription = "Profile Picture",
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
                         }
                         
                         Spacer(modifier = Modifier.height(8.dp))
@@ -4024,19 +4250,39 @@ fun ProfileTabScreen(
                         }
                     }
                     Spacer(modifier = Modifier.height(16.dp))
-                    Button(
-                        onClick = {
-                            profilePhotoPickerLauncher.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                            )
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = WhatsAppTealVal),
+                    Row(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(Icons.Default.PhotoLibrary, contentDescription = null, tint = Color.White)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(txt("গ্যালারি থেকে ছবি নিন", "Choose from Gallery"), color = Color.White, fontWeight = FontWeight.Bold)
+                        Button(
+                            onClick = {
+                                profilePhotoPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = WhatsAppTealVal),
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
+                        ) {
+                            Icon(Icons.Default.PhotoLibrary, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(txt("গ্যালারি", "Gallery"), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        Button(
+                            onClick = {
+                                launchCameraFlowProfile()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = WhatsAppGreenVal),
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
+                        ) {
+                            Icon(Icons.Default.PhotoCamera, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(txt("ক্যামেরা", "Camera"), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             },
@@ -4291,7 +4537,8 @@ fun ChatWindowScreen(
                     onDeleteForEveryone = { viewModel.deleteMessageForEveryone(msg.id) },
                     onEditMessage = { msgId, editedTxt -> viewModel.editMessage(msgId, editedTxt) },
                     onImageClick = { selectedImageForPreview = it },
-                    onVideoClick = { selectedVideoForPlayback = it }
+                    onVideoClick = { selectedVideoForPlayback = it },
+                    onRegenerate = if (contact.phone == "01300000000") { { viewModel.regenerateLastAIResponse() } } else null
                 )
             }
             item { Spacer(modifier = Modifier.height(10.dp)) }
@@ -4795,7 +5042,8 @@ fun ChatMsgBubble(
     onDeleteForEveryone: () -> Unit,
     onEditMessage: (String, String) -> Unit,
     onImageClick: (String) -> Unit,
-    onVideoClick: (String) -> Unit
+    onVideoClick: (String) -> Unit,
+    onRegenerate: (() -> Unit)? = null
 ) {
     val layoutAlign = if (isMe) Alignment.CenterEnd else Alignment.CenterStart
     val isDark = androidx.compose.foundation.isSystemInDarkTheme()
@@ -5022,7 +5270,7 @@ fun ChatMsgBubble(
                     // Option 3: Edit Message (Only sender has edit constraints, only for text messages)
                     if (isMe && !message.isDeletedForEveryone && message.mediaType == null) {
                         Button(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().testTag("edit_message_button"),
                             onClick = {
                                 showDeleteConfirmationDialog = false
                                 showEditDialog = true
@@ -5033,9 +5281,40 @@ fun ChatMsgBubble(
                         }
                     }
 
+                    // Option 4: Copy Message Text (For everyone, for text messages)
+                    if (message.mediaType == null && !message.isDeletedForEveryone) {
+                        val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
+                        val toastContext = androidx.compose.ui.platform.LocalContext.current
+                        Button(
+                            modifier = Modifier.fillMaxWidth().testTag("copy_message_button"),
+                            onClick = {
+                                clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(message.text))
+                                showDeleteConfirmationDialog = false
+                                Toast.makeText(toastContext, txt("বার্তা কপি করা হয়েছে!", "Message copied successfully!"), Toast.LENGTH_SHORT).show()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4B5563))
+                        ) {
+                            Text(txt("বার্তা কপি করুন", "Copy Message Text"), color = Color.White)
+                        }
+                    }
+
+                    // Option 5: Regenerate AI Response (Only for non-deleted chatbot assistant responses)
+                    if (onRegenerate != null && !isMe && !message.isDeletedForEveryone) {
+                        Button(
+                            modifier = Modifier.fillMaxWidth().testTag("regenerate_response_button"),
+                            onClick = {
+                                onRegenerate()
+                                showDeleteConfirmationDialog = false
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = WhatsAppTealVal)
+                        ) {
+                            Text(txt("এআই উত্তর পুনরায় তৈরি করুন", "Regenerate Response"), color = Color.White)
+                        }
+                    }
+
                     // Cancel option
                     OutlinedButton(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().testTag("cancel_message_options_button"),
                         onClick = { showDeleteConfirmationDialog = false }
                     ) {
                         Text(txt("বাতিল করুন", "Cancel"))
@@ -5097,11 +5376,20 @@ fun AvatarView(
                 .clip(CircleShape)
                 .background(Color.LightGray)
         ) {
-            Image(
-                imageVector = getAvatarVector(base64),
-                contentDescription = name,
-                modifier = Modifier.fillMaxSize()
-            )
+            if (base64.startsWith("/") || base64.startsWith("content:") || base64.startsWith("file:")) {
+                AsyncImage(
+                    model = base64,
+                    contentDescription = name,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Image(
+                    imageVector = getAvatarVector(base64),
+                    contentDescription = name,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
     } else {
         val letter = if (name.isNotBlank()) name.first().toString() else "U"

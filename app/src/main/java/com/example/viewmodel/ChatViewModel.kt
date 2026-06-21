@@ -62,6 +62,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     val firebaseProjectId = MutableStateFlow("")
     val firebaseAppId = MutableStateFlow("")
     val isFirebaseConfigured = MutableStateFlow(false)
+    val firebaseFunctionsBaseUrl = MutableStateFlow("")
 
     private val _firestoreUsers = MutableStateFlow<List<Map<String, Any>>>(emptyList())
     val firestoreUsers: StateFlow<List<Map<String, Any>>> = _firestoreUsers.asStateFlow()
@@ -548,6 +549,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         firebaseProjectId.value = config.second
         firebaseAppId.value = config.third
         isFirebaseConfigured.value = config.first.isNotEmpty()
+        firebaseFunctionsBaseUrl.value = sharedPrefs.getString("firebase_functions_base_url", "") ?: ""
     }
 
     fun saveFirebaseConfig(key: String, proj: String, app: String) {
@@ -558,6 +560,28 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     fun clearFirebaseConfig() {
         repository.clearFirebaseConfig()
         loadFirebaseConfig()
+    }
+
+    fun saveFirebaseFunctionsUrl(url: String) {
+        sharedPrefs.edit().putString("firebase_functions_base_url", url.trim()).apply()
+        firebaseFunctionsBaseUrl.value = url.trim()
+    }
+
+    fun regenerateLastAIResponse() {
+        val me = _myNumber.value ?: return
+        val active = _activeContact.value ?: return
+        
+        viewModelScope.launch {
+            val list = activeMessages.value
+            val lastUserMessage = list.lastOrNull { it.senderId == me }
+            if (lastUserMessage != null) {
+                val lastAIMessage = list.lastOrNull { it.senderId == active.phone }
+                if (lastAIMessage != null) {
+                    repository.deleteMessageForMe(lastAIMessage.id)
+                }
+                repository.triggerChatbotResponse(me, active.phone, lastUserMessage.text)
+            }
+        }
     }
 
     private suspend fun seedDummyContacts() {
