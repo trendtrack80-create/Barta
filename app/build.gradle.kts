@@ -153,3 +153,49 @@ tasks.configureEach {
         dependsOn("generateDummyAssets")
     }
 }
+
+tasks.register("prepareApkDownload") {
+    doLast {
+        val root = project.rootDir
+        val buildApk = File(project.projectDir, "build/outputs/apk/debug/app-debug.apk")
+        val buildOutputsDir = File(root, ".build-outputs")
+        val apkDownloadDir = File(root, "APK_DOWNLOAD")
+        
+        if (!buildOutputsDir.exists()) {
+            buildOutputsDir.mkdirs()
+        }
+        if (!apkDownloadDir.exists()) {
+            apkDownloadDir.mkdirs()
+        }
+        
+        val buildOutputsApk = File(buildOutputsDir, "app-debug.apk")
+        val apkDownloadApk = File(apkDownloadDir, "app-debug.apk")
+        
+        println("=== APK Preparation Details ===")
+        println("Local app build path: ${buildApk.absolutePath}")
+        
+        if (buildApk.exists()) {
+            println("Found fresh APK at build directory: ${buildApk.absolutePath} (Size: ${buildApk.length()} bytes)")
+            buildApk.copyTo(buildOutputsApk, overwrite = true)
+            println("Copied to ${buildOutputsApk.absolutePath}")
+            buildApk.copyTo(apkDownloadApk, overwrite = true)
+            println("Copied to ${apkDownloadApk.absolutePath}")
+        } else {
+            println("No fresh APK found at build directory: ${buildApk.absolutePath}")
+            if (buildOutputsApk.exists()) {
+                println("Found existing APK in .build-outputs: ${buildOutputsApk.absolutePath} (Size: ${buildOutputsApk.length()} bytes)")
+                buildOutputsApk.copyTo(apkDownloadApk, overwrite = true)
+                println("Copied existing APK to ${apkDownloadApk.absolutePath}")
+            } else {
+                println("ERROR: No APK found in .build-outputs either!")
+            }
+        }
+        
+        if (apkDownloadApk.exists()) {
+            println("SUCCESS: APK file successfully prepared at ${apkDownloadApk.absolutePath}")
+            println("Final APK Size: ${apkDownloadApk.length()} bytes")
+        } else {
+            println("FAILED: APK download file could not be created!")
+        }
+    }
+}
