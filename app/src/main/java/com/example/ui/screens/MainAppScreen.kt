@@ -16,6 +16,10 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -98,9 +102,7 @@ fun MainAppScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        if (!isConnected) {
-            OfflineBlockerScreen()
-        } else if (showOnboarding) {
+        if (showOnboarding) {
             GreetingOnboardingScreen(
                 viewModel = viewModel,
                 onFinished = {
@@ -108,9 +110,39 @@ fun MainAppScreen(
                 }
             )
         } else if (loggedInNumber == null) {
-            AuthScreen(viewModel = viewModel)
+            if (!isConnected) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
+                        Icon(Icons.Default.WifiOff, contentDescription = null, tint = WhatsAppTealVal, modifier = Modifier.size(64.dp))
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(txt("ইন্টারনেট সংযোগ নেই", "No Internet Connection"), fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(txt("লগইন বা একাউন্ট তৈরি করতে দয়া করে ইন্টারনেট অন করুন।", "Please connect to the internet to login or sign up."), color = Color.Gray, fontSize = 14.sp)
+                    }
+                }
+            } else {
+                AuthScreen(viewModel = viewModel)
+            }
         } else {
             Scaffold(
+                topBar = {
+                    if (!isConnected) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFFE53935))
+                                .padding(vertical = 4.dp, horizontal = 12.dp)
+                        ) {
+                            Text(
+                                text = txt("অফলাইন মোড • শুধু আগের চ্যাটগুলো দেখা যাবে", "Offline Mode • Only previous chats can be viewed"),
+                                color = Color.White,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.align(Alignment.Center)
+                            )
+                        }
+                    }
+                },
                 bottomBar = {
                     if (activeChatContact == null) {
                         BottomBarNavigation(
@@ -155,21 +187,21 @@ fun MainAppScreen(
                             viewModel = viewModel
                         )
                     }
+                }
+            }
 
-                    // Slide overlay for the chat list
-                    AnimatedVisibility(
-                        visible = activeChatContact != null,
-                        enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(),
-                        exit = slideOutHorizontally(targetOffsetX = { it }) + fadeOut()
-                    ) {
-                        activeChatContact?.let { contact ->
-                            ChatWindowScreen(
-                                contact = contact,
-                                viewModel = viewModel,
-                                onClose = { viewModel.selectContact(null) }
-                            )
-                        }
-                    }
+            // Slide overlay for the chat list
+            AnimatedVisibility(
+                visible = activeChatContact != null,
+                enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(),
+                exit = slideOutHorizontally(targetOffsetX = { it }) + fadeOut()
+            ) {
+                activeChatContact?.let { contact ->
+                    ChatWindowScreen(
+                        contact = contact,
+                        viewModel = viewModel,
+                        onClose = { viewModel.selectContact(null) }
+                    )
                 }
             }
         }
@@ -802,6 +834,7 @@ fun AuthScreen(
         modifier = Modifier
             .fillMaxSize()
             .padding(24.dp)
+            .verticalScroll(rememberScrollState())
             .statusBarsPadding()
             .navigationBarsPadding(),
         verticalArrangement = Arrangement.Center,
@@ -954,8 +987,8 @@ fun AuthScreen(
                         singleLine = true,
                         leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = Color.Gray) },
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
+                            focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                            unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
                             focusedLabelColor = WhatsAppTealVal,
                             unfocusedLabelColor = Color.Gray
                         ),
@@ -983,12 +1016,12 @@ fun AuthScreen(
                         imeAction = ImeAction.Next
                     ),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
+                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
                         focusedLabelColor = WhatsAppTealVal,
                         unfocusedLabelColor = Color.Gray,
-                        focusedPrefixColor = Color.White,
-                        unfocusedPrefixColor = Color.White
+                        focusedPrefixColor = MaterialTheme.colorScheme.onSurface,
+                        unfocusedPrefixColor = MaterialTheme.colorScheme.onSurface
                     ),
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1011,7 +1044,8 @@ fun AuthScreen(
                         IconButton(onClick = { showPassword = !showPassword }) {
                             Icon(
                                 imageVector = if (showPassword) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                                contentDescription = if (showPassword) "Hide" else "Show"
+                                contentDescription = if (showPassword) "Hide" else "Show",
+                                tint = Color.Gray
                             )
                         }
                     },
@@ -1021,8 +1055,8 @@ fun AuthScreen(
                         imeAction = ImeAction.Done
                     ),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
+                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
                         focusedLabelColor = WhatsAppTealVal,
                         unfocusedLabelColor = Color.Gray
                     ),
@@ -2485,6 +2519,7 @@ fun StatusTabScreen(
 fun SettingsTabScreen(
     viewModel: ChatViewModel
 ) {
+    val isConnected by rememberConnectivityState()
     val myPhone by viewModel.myNumber.collectAsStateWithLifecycle()
     val myNameState by viewModel.userDisplayName.collectAsStateWithLifecycle()
     val myProfilePic by viewModel.userProfilePicBase64.collectAsStateWithLifecycle()
@@ -2559,7 +2594,13 @@ fun SettingsTabScreen(
                     Text(myPhone ?: "", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                 }
                 IconButton(
-                    onClick = { showPasswordChangeDialog = true },
+                    onClick = {
+                        if (!isConnected) {
+                            Toast.makeText(viewModel.getApplication(), txt("অফলাইন মোডে সেটিংস পরিবর্তন করা যাবে না", "Settings cannot be changed in offline mode"), Toast.LENGTH_SHORT).show()
+                        } else {
+                            showPasswordChangeDialog = true
+                        }
+                    },
                     modifier = Modifier.testTag("change_password_button")
                 ) {
                     Icon(Icons.Default.Edit, contentDescription = "Change Password", tint = WhatsAppTealVal)
@@ -2587,7 +2628,13 @@ fun SettingsTabScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { showLangMenu = true }
+                        .clickable {
+                            if (!isConnected) {
+                                Toast.makeText(viewModel.getApplication(), txt("অফলাইন মোডে সেটিংস পরিবর্তন করা যাবে না", "Settings cannot be changed in offline mode"), Toast.LENGTH_SHORT).show()
+                            } else {
+                                showLangMenu = true
+                            }
+                        }
                         .padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
@@ -2601,7 +2648,13 @@ fun SettingsTabScreen(
                         }
                     }
                     Box {
-                        TextButton(onClick = { showLangMenu = true }) {
+                        TextButton(onClick = {
+                            if (!isConnected) {
+                                Toast.makeText(viewModel.getApplication(), txt("অফলাইন মোডে সেটিংস পরিবর্তন করা যাবে না", "Settings cannot be changed in offline mode"), Toast.LENGTH_SHORT).show()
+                            } else {
+                                showLangMenu = true
+                            }
+                        }) {
                             Text(txt("পরিবর্তন করুন", "Change"), color = WhatsAppTealVal)
                         }
                         DropdownMenu(expanded = showLangMenu, onDismissRequest = { showLangMenu = false }) {
@@ -2648,7 +2701,13 @@ fun SettingsTabScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { showThemeMenu = true }
+                        .clickable {
+                            if (!isConnected) {
+                                Toast.makeText(viewModel.getApplication(), txt("অফলাইন মোডে সেটিংস পরিবর্তন করা যাবে না", "Settings cannot be changed in offline mode"), Toast.LENGTH_SHORT).show()
+                            } else {
+                                showThemeMenu = true
+                            }
+                        }
                         .padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
@@ -2662,7 +2721,13 @@ fun SettingsTabScreen(
                         }
                     }
                     Box {
-                        TextButton(onClick = { showThemeMenu = true }) {
+                        TextButton(onClick = {
+                            if (!isConnected) {
+                                Toast.makeText(viewModel.getApplication(), txt("অফলাইন মোডে সেটিংস পরিবর্তন করা যাবে না", "Settings cannot be changed in offline mode"), Toast.LENGTH_SHORT).show()
+                            } else {
+                                showThemeMenu = true
+                            }
+                        }) {
                             Text(txt("পরিবর্তন করুন", "Change"), color = WhatsAppTealVal)
                         }
                         DropdownMenu(expanded = showThemeMenu, onDismissRequest = { showThemeMenu = false }) {
@@ -4541,6 +4606,36 @@ fun ChatWindowScreen(
                     onRegenerate = if (contact.phone == "01300000000") { { viewModel.regenerateLastAIResponse() } } else null
                 )
             }
+            if (contact.typingStatus.isNotEmpty()) {
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.Start
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp, 12.dp, 12.dp, 0.dp),
+                            color = Color.White,
+                            shadowElevation = 1.dp,
+                            modifier = Modifier.widthIn(max = 280.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text(
+                                    text = if (contact.phone == "01300000000" || contact.isSimulated) {
+                                        if (appLanguage == "bn") "বার্তা সহকারী ভাবছে... 🤖💭" else "Barta Assistant is thinking... 🤖💭"
+                                    } else {
+                                        if (appLanguage == "bn") "লিখছে..." else "typing..."
+                                    },
+                                    color = Color.Gray,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
+                }
+            }
             item { Spacer(modifier = Modifier.height(10.dp)) }
         }
 
@@ -4851,34 +4946,14 @@ fun ChatWindowScreen(
         )
     }
 
-    // Modal dialogue selecting simulated video capture clip for mock Firebase storage upload
+    // Modal dialogue selecting video capture clip for mock Firebase storage upload
     if (showSelectVideoDialog) {
         AlertDialog(
             onDismissRequest = { showSelectVideoDialog = false },
             title = { Text("ভিডিও পাঠানো (Gallery / Storage)", fontWeight = FontWeight.Bold, color = WhatsAppTealVal) },
             text = {
                 Column {
-                    Text("ফায়ারবেস ড্রাইভ অথবা আপনার ফোনের গ্যালারি থেকে যেকোনো ভিডিও নির্বাচন করে পাঠান:", fontSize = 12.sp, color = Color.Gray)
-                    Spacer(modifier = Modifier.height(14.dp))
-                    listOf("nature_scenery" to "প্রাকৃতিক দৃশ্য ভিডিও 🌲", "funny_cat" to "বিড়ালের মজার খেলা 🐱", "cooking_clip" to "রান্নার দারুণ রেসিপি ক্লিপ 🍳").forEach { (vId, label) ->
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp)
-                                .clickable {
-                                    viewModel.sendMediaMessage(vId, "video")
-                                    showSelectVideoDialog = false
-                                    Toast.makeText(viewModel.getApplication(), "ভিডিও সফলভাবে ফায়ারবেস ক্লাউডে আপলোড ও পাঠানো হয়েছে!", Toast.LENGTH_SHORT).show()
-                                },
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFFF1F8E9))
-                        ) {
-                            Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.PlayCircle, contentDescription = null, tint = WhatsAppTealVal)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(label, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Black)
-                            }
-                        }
-                    }
+                    Text("আপনার ফোনের গ্যালারি থেকে যেকোনো ভিডিও নির্বাচন করে পাঠান:", fontSize = 12.sp, color = Color.Gray)
                     Spacer(modifier = Modifier.height(18.dp))
                     Button(
                         onClick = {
@@ -5032,6 +5107,7 @@ fun ChatWindowScreen(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ChatMsgBubble(
     message: Message,
@@ -5122,7 +5198,10 @@ fun ChatMsgBubble(
                                 .height(140.dp)
                                 .clip(RoundedCornerShape(8.dp))
                                 .background(Color.White)
-                                .clickable { onImageClick(message.mediaUrl) }
+                                .combinedClickable(
+                                    onClick = { onImageClick(message.mediaUrl) },
+                                    onLongClick = { showDeleteConfirmationDialog = true }
+                                )
                                 .padding(4.dp),
                             contentAlignment = Alignment.Center
                         ) {
@@ -5152,7 +5231,10 @@ fun ChatMsgBubble(
                                 .height(110.dp)
                                 .clip(RoundedCornerShape(8.dp))
                                 .background(Color(0xFF263238))
-                                .clickable { onVideoClick(message.mediaUrl) },
+                                .combinedClickable(
+                                    onClick = { onVideoClick(message.mediaUrl) },
+                                    onLongClick = { showDeleteConfirmationDialog = true }
+                                ),
                             contentAlignment = Alignment.Center
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -5215,12 +5297,21 @@ fun ChatMsgBubble(
                     )
                     if (isMe) {
                         Spacer(modifier = Modifier.width(4.dp))
-                        Icon(
-                            imageVector = Icons.Default.DoneAll,
-                            contentDescription = "Read status",
-                            tint = Color(0xFF34B7F1),
-                            modifier = Modifier.size(14.dp)
-                        )
+                        if (message.isPending) {
+                            Icon(
+                                imageVector = Icons.Default.Schedule,
+                                contentDescription = "Pending status",
+                                tint = Color.Gray,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.DoneAll,
+                                contentDescription = "Read status",
+                                tint = Color(0xFF34B7F1),
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
                     }
                 }
             }

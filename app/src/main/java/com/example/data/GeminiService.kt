@@ -125,28 +125,38 @@ object GeminiService {
 
         val endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$apiKey"
 
-        val contentsArray = JSONArray()
-        
-        // Feed conversation history inside Google contents schema
+        // Feed conversation history inside Google contents schema with strict role alternation
         val recentHistory = previousMessages.sortedBy { it.timestamp }.takeLast(15)
-        for (msg in recentHistory) {
-            val contentObj = JSONObject()
-            // Set sender roles correctly: "user" (sender) or "model" (chatbot)
-            contentObj.put("role", if (msg.senderId == "01300000000") "model" else "user")
-            
-            val partsArray = JSONArray()
-            val partText = JSONObject().put("text", msg.text)
-            partsArray.put(partText)
-            contentObj.put("parts", partsArray)
-            contentsArray.put(contentObj)
+        val allRawMessages = recentHistory.map { msg ->
+            val role = if (msg.senderId == "01300000000") "model" else "user"
+            role to msg.text
+        }.toMutableList()
+
+        // Append active user message
+        allRawMessages.add("user" to userMessage)
+
+        val alternatingContents = mutableListOf<JSONObject>()
+        for ((role, text) in allRawMessages) {
+            if (alternatingContents.isNotEmpty() && alternatingContents.last().getString("role") == role) {
+                val lastObj = alternatingContents.last()
+                val parts = lastObj.getJSONArray("parts")
+                val firstPart = parts.getJSONObject(0)
+                val existingText = firstPart.getString("text")
+                firstPart.put("text", "$existingText\n$text")
+            } else {
+                val contentObj = JSONObject()
+                contentObj.put("role", role)
+                val partsArray = JSONArray()
+                partsArray.put(JSONObject().put("text", text))
+                contentObj.put("parts", partsArray)
+                alternatingContents.add(contentObj)
+            }
         }
 
-        // Add active message
-        val currentContent = JSONObject()
-        currentContent.put("role", "user")
-        val currentParts = JSONArray().put(JSONObject().put("text", userMessage))
-        currentContent.put("parts", currentParts)
-        contentsArray.put(currentContent)
+        val contentsArray = JSONArray()
+        for (obj in alternatingContents) {
+            contentsArray.put(obj)
+        }
 
         // System instructions context setup
         val isBn = language == "bn"

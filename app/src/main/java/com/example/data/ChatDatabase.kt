@@ -58,6 +58,12 @@ interface MessageDao {
 
     @Query("SELECT * FROM messages WHERE id = :msgId LIMIT 1")
     suspend fun getMessageById(msgId: String): Message?
+
+    @Query("SELECT * FROM messages WHERE isPending = 1")
+    suspend fun getPendingMessages(): List<Message>
+
+    @Query("UPDATE messages SET isPending = 0 WHERE id = :msgId")
+    suspend fun markMessageNotPending(msgId: String)
 }
 
 @Dao

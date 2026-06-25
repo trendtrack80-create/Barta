@@ -31,7 +31,8 @@ data class Message(
     val mediaType: String? = null, // "image" or "video"
     val isDeletedForMe: Boolean = false,
     val isDeletedForEveryone: Boolean = false,
-    val isEdited: Boolean = false
+    val isEdited: Boolean = false,
+    val isPending: Boolean = false
 )
 
 @Entity(tableName = "local_users")

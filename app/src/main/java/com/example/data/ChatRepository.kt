@@ -1,6 +1,8 @@
 package com.example.data
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.util.Log
 import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
@@ -32,6 +34,50 @@ class ChatRepository(
     private var activeChatPhone: String? = null
     private val repositoryScope = CoroutineScope(Dispatchers.IO)
     private val sharedPrefs = context.getSharedPreferences("BartaChatPrefs", Context.MODE_PRIVATE)
+
+    fun isNetworkAvailable(): Boolean {
+        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
+        val activeNetwork = connectivityManager.activeNetwork ?: return false
+        val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork) ?: return false
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
+    fun syncPendingMessages() {
+        if (!isNetworkAvailable()) return
+        repositoryScope.launch {
+            try {
+                val pending = messageDao.getPendingMessages()
+                for (msg in pending) {
+                    val chatId = getChatId(msg.senderId, msg.receiverId)
+                    val firestoreMsg = hashMapOf(
+                        "id" to msg.id,
+                        "senderId" to msg.senderId,
+                        "receiverId" to msg.receiverId,
+                        "text" to msg.text,
+                        "timestamp" to msg.timestamp,
+                        "isRead" to msg.isRead,
+                        "senderName" to msg.senderName,
+                        "mediaUrl" to (msg.mediaUrl ?: ""),
+                        "mediaType" to (msg.mediaType ?: ""),
+                        "isDeletedForEveryone" to msg.isDeletedForEveryone
+                    )
+                    firestore?.collection("chats")
+                        ?.document(chatId)
+                        ?.collection("messages")
+                        ?.document(msg.id)
+                        ?.set(firestoreMsg)
+                        ?.addOnSuccessListener {
+                            repositoryScope.launch {
+                                messageDao.markMessageNotPending(msg.id)
+                                Log.d("BartaChat", "Synced pending message: ${msg.id}")
+                            }
+                        }
+                }
+            } catch (e: Exception) {
+                Log.e("BartaChat", "Failed syncing pending messages", e)
+            }
+        }
+    }
 
     init {
         initializeFirebaseIfConfigured()
@@ -239,6 +285,9 @@ class ChatRepository(
     ) {
         val messageId = UUID.randomUUID().toString()
         val timestamp = System.currentTimeMillis()
+        val isOffline = !isNetworkAvailable()
+        val isPendingVal = isOffline && !isSimulatedReceiver
+
         val message = Message(
             id = messageId,
             senderId = sender,
@@ -248,11 +297,21 @@ class ChatRepository(
             isRead = false,
             senderName = senderName,
             mediaUrl = mediaUrl,
-            mediaType = mediaType
+            mediaType = mediaType,
+            isPending = isPendingVal
         )
 
         messageDao.insertMessage(message)
         contactDao.updateLastMessage(receiver, if (mediaType != null) "[${mediaType.replaceFirstChar { it.uppercase() }}]" else text, timestamp)
+
+        if (isOffline) {
+            if (isSimulatedReceiver) {
+                // If the user wants to chat with the bot while offline, let the bot reply with a clear offline notice
+                triggerChatbotResponse(sender, receiver, text)
+            }
+            Log.d("BartaChat", "Message saved locally as pending since we are offline.")
+            return
+        }
 
         if (isSimulatedReceiver) {
             triggerChatbotResponse(sender, receiver, text)

@@ -177,6 +177,16 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+
+        // Periodic sync of pending messages when online
+        viewModelScope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(10000)
+                if (repository.isNetworkAvailable()) {
+                    repository.syncPendingMessages()
+                }
+            }
+        }
     }
 
     fun postStatus(text: String, mediaUrl: String? = null, bgColorVal: Long = 0xFF00897B) {
