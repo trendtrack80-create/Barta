@@ -146,35 +146,7 @@ dependencies {
   "ksp"(libs.moshi.kotlin.codegen)
 }
 
-abstract class GenerateDummyAssetsTask : DefaultTask() {
-    @get:OutputDirectory
-    abstract val outputDir: DirectoryProperty
-
-    @TaskAction
-    fun generate() {
-        val assetsDir = outputDir.get().asFile
-        if (!assetsDir.exists()) {
-            assetsDir.mkdirs()
-        }
-        val dummyFile = File(assetsDir, "barta_enrichment_assets.bin")
-        if (!dummyFile.exists() || dummyFile.length() < 10 * 1024 * 1024) {
-            val bytes = ByteArray(10 * 1024 * 1024)
-            for (i in bytes.indices) {
-                bytes[i] = (i % 256).toByte()
-            }
-            dummyFile.writeBytes(bytes)
-        }
-    }
-}
-
-tasks.register<GenerateDummyAssetsTask>("generateDummyAssets") {
-    outputDir.set(project.layout.projectDirectory.dir("src/main/assets"))
-}
-
 tasks.configureEach {
-    if (this.name.contains("merge", ignoreCase = true) && this.name.contains("Assets", ignoreCase = true)) {
-        dependsOn("generateDummyAssets")
-    }
     if (this.name == "assembleDebug" || this.name == "assemble" || this.name == "assembleRelease") {
         finalizedBy("prepareApkDownload")
     }
@@ -239,6 +211,18 @@ tasks.register("prepareApkDownload") {
             println("Final APK Size: ${apkDownloadApk.length()} bytes")
         } else {
             println("FAILED: APK download file could not be created!")
+        }
+    }
+}
+
+tasks.register("printFileSizes") {
+    doLast {
+        val rootDirFile = rootProject.projectDir
+        println("=== Large Files (>100KB) in Workspace ===")
+        rootDirFile.walkTopDown().forEach { file ->
+            if (file.isFile && file.length() > 100 * 1024 && !file.absolutePath.contains(".gradle") && !file.absolutePath.contains("build")) {
+                println("${file.absolutePath} - ${file.length() / 1024} KB")
+            }
         }
     }
 }
