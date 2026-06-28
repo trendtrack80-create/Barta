@@ -1,6 +1,8 @@
 package com.example.data
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.util.Log
 import com.example.BuildConfig
 import okhttp3.MediaType.Companion.toMediaType
@@ -23,6 +25,15 @@ object GeminiService {
 
     private val mediaType = "application/json; charset=utf-8".toMediaType()
 
+    private fun isInternetAvailable(context: Context): Boolean {
+        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
+        val activeNetwork = connectivityManager.activeNetwork ?: return false
+        val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork) ?: return false
+        val hasInternet = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        val hasValidated = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+        return hasInternet && hasValidated
+    }
+
     /**
      * Safely triggers Gemini 2.5 Flash model through Firebase Cloud Function.
      * Falls back to a direct REST API call if Cloud Function URL is not configured or fails.
@@ -34,6 +45,15 @@ object GeminiService {
         previousMessages: List<Message>,
         language: String
     ): String {
+        val isBn = language == "bn"
+        if (!isInternetAvailable(context)) {
+            return if (isBn) {
+                "ইন্টারনেট সংযোগ নেই। অনুগ্রহ করে মোবাইল ডেটা চালু করুন অথবা এমন একটি ওয়াই-ফাই নেটওয়ার্কের সাথে সংযুক্ত হন যাতে সচল ইন্টারনেট সুবিধা রয়েছে।"
+            } else {
+                "No internet connection. Please turn on mobile data or connect to a Wi-Fi network with internet access."
+            }
+        }
+
         val sharedPrefs = context.getSharedPreferences("BartaChatPrefs", Context.MODE_PRIVATE)
         val cloudFunctionsUrl = sharedPrefs.getString("firebase_functions_base_url", "")?.trim() ?: ""
 
@@ -134,6 +154,11 @@ object GeminiService {
 
         // Append active user message
         allRawMessages.add("user" to userMessage)
+
+        // Drop any leading "model" messages so the payload always starts with a "user" role content
+        while (allRawMessages.isNotEmpty() && allRawMessages.first().first == "model") {
+            allRawMessages.removeAt(0)
+        }
 
         val alternatingContents = mutableListOf<JSONObject>()
         for ((role, text) in allRawMessages) {

@@ -27,6 +27,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val _currentTab = MutableStateFlow("chats") // chats, contacts, profile
     val currentTab: StateFlow<String> = _currentTab.asStateFlow()
 
+    private val _navigationStack = MutableStateFlow<List<String>>(listOf("chats"))
+    val navigationStack: StateFlow<List<String>> = _navigationStack.asStateFlow()
+
     val searchQuery = MutableStateFlow("")
 
     val contacts: StateFlow<List<Contact>> = combine(repository.allContacts, searchQuery) { list, query ->
@@ -195,6 +198,18 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun deleteStatus(statusId: String, onComplete: (Boolean) -> Unit = {}) {
+        repository.deleteStatus(statusId, onComplete)
+    }
+
+    fun toggleLoveStatus(statusId: String, currentLoves: String, onComplete: (Boolean) -> Unit = {}) {
+        repository.toggleLoveStatus(statusId, currentLoves, onComplete)
+    }
+
+    fun markStatusAsViewed(statusId: String, currentViewers: String) {
+        repository.markStatusAsViewed(statusId, currentViewers)
+    }
+
     fun register(phone: String, name: String, password: String, profilePic: String, callback: (String?) -> Unit) {
         val cleanPhone = phone.trim()
         val cleanName = name.trim()
@@ -356,6 +371,26 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     fun selectTab(tab: String) {
         _currentTab.value = tab
+        val current = _navigationStack.value.toMutableList()
+        if (current.isEmpty() || current.last() != tab) {
+            current.add(tab)
+            _navigationStack.value = current
+        }
+    }
+
+    fun navigateBack(): Boolean {
+        if (_activeContact.value != null) {
+            selectContact(null)
+            return true
+        }
+        val current = _navigationStack.value.toMutableList()
+        if (current.size > 1) {
+            current.removeAt(current.lastIndex)
+            _navigationStack.value = current
+            _currentTab.value = current.last()
+            return true
+        }
+        return false
     }
 
     fun logout() {
@@ -371,6 +406,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             .apply()
         _myNumber.value = null
         _activeContact.value = null
+        _navigationStack.value = listOf("chats")
         userProfilePicBase64.value = ""
         userDisplayName.value = ""
         repository.stopListeningToGroups()
@@ -515,6 +551,24 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 mediaUrl = mediaUrl,
                 mediaType = mediaType
             )
+        }
+    }
+
+    fun forwardMessage(message: Message, recipients: List<Contact>) {
+        val me = _myNumber.value ?: return
+        val myName = userDisplayName.value.ifEmpty { "বার্তা ব্যবহারকারী" }
+        viewModelScope.launch {
+            recipients.forEach { contact ->
+                repository.forwardMessage(
+                    sender = me,
+                    receiver = contact.phone,
+                    text = message.text,
+                    isSimulatedReceiver = contact.isSimulated || contact.phone == "01300000000",
+                    senderName = myName,
+                    mediaUrl = message.mediaUrl,
+                    mediaType = message.mediaType
+                )
+            }
         }
     }
 

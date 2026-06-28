@@ -365,6 +365,91 @@ class ChatRepository(
         }
     }
 
+    suspend fun forwardMessage(
+        sender: String,
+        receiver: String,
+        text: String,
+        isSimulatedReceiver: Boolean,
+        senderName: String = "",
+        mediaUrl: String? = null,
+        mediaType: String? = null
+    ) {
+        val messageId = java.util.UUID.randomUUID().toString()
+        val timestamp = System.currentTimeMillis()
+        val isOffline = !isNetworkAvailable()
+        val isPendingVal = isOffline && !isSimulatedReceiver
+
+        val message = Message(
+            id = messageId,
+            senderId = sender,
+            receiverId = receiver,
+            text = text,
+            timestamp = timestamp,
+            isRead = false,
+            senderName = senderName,
+            mediaUrl = mediaUrl,
+            mediaType = mediaType,
+            isPending = isPendingVal,
+            isForwarded = true
+        )
+
+        messageDao.insertMessage(message)
+        contactDao.updateLastMessage(receiver, if (mediaType != null) "[${mediaType.replaceFirstChar { it.uppercase() }}] (Forwarded)" else text, timestamp)
+
+        if (isOffline) {
+            if (isSimulatedReceiver) {
+                triggerChatbotResponse(sender, receiver, text)
+            }
+            return
+        }
+
+        if (isSimulatedReceiver) {
+            triggerChatbotResponse(sender, receiver, text)
+        } else {
+            firestore?.let { db ->
+                val chatId = getChatId(sender, receiver)
+                val firestoreMsg = hashMapOf(
+                    "id" to messageId,
+                    "senderId" to sender,
+                    "receiverId" to receiver,
+                    "text" to text,
+                    "timestamp" to timestamp,
+                    "isRead" to false,
+                    "senderName" to senderName,
+                    "mediaUrl" to (mediaUrl ?: ""),
+                    "mediaType" to (mediaType ?: ""),
+                    "isDeletedForEveryone" to false,
+                    "isForwarded" to true
+                )
+                db.collection("chats")
+                    .document(chatId)
+                    .collection("messages")
+                    .document(messageId)
+                    .set(firestoreMsg)
+
+                val chatParticipants = if (receiver.startsWith("group_")) {
+                    val contact = contactDao.getContactByPhone(receiver)
+                    val list = contact?.groupParticipants?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() } ?: listOf(sender, receiver)
+                    (list + sender).distinct()
+                } else {
+                    listOf(sender, receiver)
+                }
+
+                val chatMeta = hashMapOf(
+                    "id" to chatId,
+                    "lastMessageText" to (if (mediaType != null) "[${mediaType.replaceFirstChar { it.uppercase() }}] (Forwarded)" else text),
+                    "lastMessageTime" to timestamp,
+                    "lastSender" to sender,
+                    "lastSenderName" to senderName,
+                    "participants" to chatParticipants
+                )
+                db.collection("chats")
+                    .document(chatId)
+                    .set(chatMeta, com.google.firebase.firestore.SetOptions.merge())
+            }
+        }
+    }
+
     suspend fun deleteMessageForMe(msgId: String) {
         messageDao.markDeletedForMe(msgId)
     }
@@ -623,9 +708,12 @@ class ChatRepository(
                                 if (senderId != myNumber) {
                                     val currentContact = contactDao.getContactByPhone(peerNumber)
                                     if (currentContact != null && doc.type == com.google.firebase.firestore.DocumentChange.Type.ADDED) {
-                                        hasNew = true
-                                        if (peerNumber != activeChatPhone) {
-                                            contactDao.updateUnreadCount(peerNumber, currentContact.unreadCount + 1)
+                                        val existingMsg = messageDao.getMessageById(id)
+                                        if (existingMsg == null) {
+                                            hasNew = true
+                                            if (peerNumber != activeChatPhone) {
+                                                contactDao.updateUnreadCount(peerNumber, currentContact.unreadCount + 1)
+                                            }
                                         }
                                     }
                                 }
@@ -859,10 +947,11 @@ class ChatRepository(
                     )
                 } catch (e: Exception) {
                     Log.e("BartaChat", "Gemini error: ${e.message}", e)
+                    val errorDetail = e.message ?: e.toString()
                     if (language == "bn") {
-                        "দুঃখিত, সংযোগে ত্রুটি ঘটেছে! এআই ক্লাউড ফাংশন বা ইন্টারনেট কানেকশন চেক করুন।"
+                        "দুঃখিত, সংযোগে সমস্যা হয়েছে! (ত্রুটি: $errorDetail)। অনুগ্রহ করে আপনার এআই এপিআই কি (API Key) বা ক্লাউড ফাংশন এবং ইন্টারনেট কানেকশন যাচাই করুন।"
                     } else {
-                        "Sorry, a connection error occurred. Please verify your AI Cloud Function URL or internet connection."
+                        "Sorry, an error occurred while connecting to the AI! (Error: $errorDetail). Please verify your AI API Key, Cloud Function, or internet connection."
                     }
                 }
 
@@ -1052,7 +1141,9 @@ class ChatRepository(
             text = text,
             mediaUrl = mediaUrl,
             timestamp = timestamp,
-            bgColorVal = bgColorVal
+            bgColorVal = bgColorVal,
+            loves = "",
+            viewers = ""
         )
 
         statusDao.insertStatus(status)
@@ -1066,7 +1157,9 @@ class ChatRepository(
                 "text" to text,
                 "mediaUrl" to (mediaUrl ?: ""),
                 "timestamp" to timestamp,
-                "bgColorVal" to bgColorVal
+                "bgColorVal" to bgColorVal,
+                "loves" to "",
+                "viewers" to ""
             )
             db.collection("statuses").document(id).set(data)
                 .addOnSuccessListener {
@@ -1075,6 +1168,80 @@ class ChatRepository(
                 .addOnFailureListener { e ->
                     Log.e("BartaChat", "Failed to upload status to Firestore", e)
                 }
+        }
+    }
+
+    fun deleteStatus(statusId: String, onComplete: (Boolean) -> Unit = {}) {
+        repositoryScope.launch {
+            try {
+                statusDao.deleteStatusById(statusId)
+                firestore?.let { db ->
+                    db.collection("statuses").document(statusId).delete()
+                        .addOnSuccessListener {
+                            onComplete(true)
+                        }
+                        .addOnFailureListener {
+                            onComplete(false)
+                        }
+                } ?: onComplete(true)
+            } catch (e: Exception) {
+                Log.e("BartaChat", "Error deleting status: ${e.message}", e)
+                onComplete(false)
+            }
+        }
+    }
+
+    fun toggleLoveStatus(statusId: String, currentLoves: String, onComplete: (Boolean) -> Unit = {}) {
+        val myPhone = sharedPrefs.getString("logged_user_phone", "") ?: ""
+        val myName = sharedPrefs.getString("logged_user_display_name", "Anonymous") ?: "Anonymous"
+        if (myPhone.isEmpty()) return
+
+        val loversList = if (currentLoves.isEmpty()) mutableListOf() else currentLoves.split(",").toMutableList()
+        val existingIndex = loversList.indexOfFirst { it.startsWith("$myPhone:") }
+
+        if (existingIndex >= 0) {
+            loversList.removeAt(existingIndex)
+        } else {
+            loversList.add("$myPhone:$myName")
+        }
+
+        val newLoves = loversList.joinToString(",")
+
+        repositoryScope.launch {
+            try {
+                firestore?.let { db ->
+                    db.collection("statuses").document(statusId).update("loves", newLoves)
+                        .addOnSuccessListener { onComplete(true) }
+                        .addOnFailureListener { onComplete(false) }
+                } ?: onComplete(false)
+            } catch (e: Exception) {
+                Log.e("BartaChat", "Error toggling love status", e)
+                onComplete(false)
+            }
+        }
+    }
+
+    fun markStatusAsViewed(statusId: String, currentViewers: String) {
+        val myPhone = sharedPrefs.getString("logged_user_phone", "") ?: ""
+        val myName = sharedPrefs.getString("logged_user_display_name", "Anonymous") ?: "Anonymous"
+        if (myPhone.isEmpty()) return
+
+        val viewersList = if (currentViewers.isEmpty()) mutableListOf() else currentViewers.split(",").toMutableList()
+        val exists = viewersList.any { it.startsWith("$myPhone:") }
+
+        if (!exists) {
+            viewersList.add("$myPhone:$myName")
+            val newViewers = viewersList.joinToString(",")
+            repositoryScope.launch {
+                try {
+                    firestore?.let { db ->
+                        db.collection("statuses").document(statusId).update("viewers", newViewers)
+                            .addOnSuccessListener { Log.d("BartaChat", "Marked status $statusId as viewed") }
+                    }
+                } catch (e: Exception) {
+                    Log.e("BartaChat", "Error marking status as viewed", e)
+                }
+            }
         }
     }
 
@@ -1105,19 +1272,27 @@ class ChatRepository(
                             val mediaUrl = data["mediaUrl"] as? String ?: ""
                             val timestamp = data["timestamp"] as? Long ?: System.currentTimeMillis()
                             val bgColorVal = data["bgColorVal"] as? Long ?: 0xFF00897BL
+                            val loves = data["loves"] as? String ?: ""
+                            val viewers = data["viewers"] as? String ?: ""
 
                             if (id.isNotEmpty()) {
-                                val status = ChatStatus(
-                                    id = id,
-                                    phone = phone,
-                                    name = name,
-                                    avatar = avatar,
-                                    text = text,
-                                    mediaUrl = mediaUrl.ifEmpty { null },
-                                    timestamp = timestamp,
-                                    bgColorVal = bgColorVal
-                                )
-                                statusDao.insertStatus(status)
+                                if (doc.type == com.google.firebase.firestore.DocumentChange.Type.REMOVED) {
+                                    statusDao.deleteStatusById(id)
+                                } else {
+                                    val status = ChatStatus(
+                                        id = id,
+                                        phone = phone,
+                                        name = name,
+                                        avatar = avatar,
+                                        text = text,
+                                        mediaUrl = mediaUrl.ifEmpty { null },
+                                        timestamp = timestamp,
+                                        bgColorVal = bgColorVal,
+                                        loves = loves,
+                                        viewers = viewers
+                                    )
+                                    statusDao.insertStatus(status)
+                                }
                             }
                         }
                         withContext(Dispatchers.Main) {

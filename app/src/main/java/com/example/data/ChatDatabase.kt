@@ -91,9 +91,12 @@ interface StatusDao {
 
     @Query("DELETE FROM statuses WHERE timestamp < :cutoff")
     suspend fun pruneOldStatuses(cutoff: Long)
+
+    @Query("DELETE FROM statuses WHERE id = :statusId")
+    suspend fun deleteStatusById(statusId: String)
 }
 
-@Database(entities = [Contact::class, Message::class, LocalUser::class, ChatStatus::class], version = 4, exportSchema = false)
+@Database(entities = [Contact::class, Message::class, LocalUser::class, ChatStatus::class], version = 6, exportSchema = false)
 abstract class ChatDatabase : RoomDatabase() {
     abstract fun contactDao(): ContactDao
     abstract fun messageDao(): MessageDao

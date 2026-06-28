@@ -32,7 +32,8 @@ data class Message(
     val isDeletedForMe: Boolean = false,
     val isDeletedForEveryone: Boolean = false,
     val isEdited: Boolean = false,
-    val isPending: Boolean = false
+    val isPending: Boolean = false,
+    val isForwarded: Boolean = false
 )
 
 @Entity(tableName = "local_users")
@@ -53,7 +54,9 @@ data class ChatStatus(
     val text: String,
     val mediaUrl: String? = null,
     val timestamp: Long,
-    val bgColorVal: Long
+    val bgColorVal: Long,
+    val loves: String = "",    // phone:name,phone:name
+    val viewers: String = ""   // phone:name,phone:name
 )
 
 data class SyncedContact(

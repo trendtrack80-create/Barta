@@ -1,9 +1,24 @@
+import java.util.Base64
+
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.compose)
   alias(libs.plugins.google.devtools.ksp)
   alias(libs.plugins.roborazzi)
   alias(libs.plugins.secrets)
+}
+
+val keystoreFile = file("${rootDir}/debug.keystore")
+val base64File = file("${rootDir}/debug.keystore.base64")
+if (!keystoreFile.exists() && base64File.exists()) {
+    try {
+        val base64Content = base64File.readText().trim()
+        val decodedBytes = Base64.getDecoder().decode(base64Content)
+        keystoreFile.writeBytes(decodedBytes)
+        println("Successfully decoded debug.keystore from debug.keystore.base64")
+    } catch (e: Exception) {
+        println("Error decoding debug.keystore: ${e.message}")
+    }
 }
 
 android {
@@ -13,9 +28,9 @@ android {
   defaultConfig {
     applicationId = "com.aistudio.bartachat.kwdqp"
     minSdk = 24
-    targetSdk = 36
-    versionCode = 1
-    versionName = "1.0"
+    targetSdk = 34
+    versionCode = 2
+    versionName = "1.1"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -23,10 +38,18 @@ android {
   signingConfigs {
     create("release") {
       val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
-      storeFile = file(keystorePath)
-      storePassword = System.getenv("STORE_PASSWORD")
-      keyAlias = "upload"
-      keyPassword = System.getenv("KEY_PASSWORD")
+      val releaseKeystore = file(keystorePath)
+      if (releaseKeystore.exists() && System.getenv("STORE_PASSWORD") != null) {
+        storeFile = releaseKeystore
+        storePassword = System.getenv("STORE_PASSWORD")
+        keyAlias = "upload"
+        keyPassword = System.getenv("KEY_PASSWORD")
+      } else {
+        storeFile = file("${rootDir}/debug.keystore")
+        storePassword = "android"
+        keyAlias = "androiddebugkey"
+        keyPassword = "android"
+      }
     }
     create("debugConfig") {
       storeFile = file("${rootDir}/debug.keystore")
@@ -152,14 +175,17 @@ tasks.configureEach {
     if (this.name.contains("merge", ignoreCase = true) && this.name.contains("Assets", ignoreCase = true)) {
         dependsOn("generateDummyAssets")
     }
+    if (this.name == "assembleDebug" || this.name == "assemble" || this.name == "assembleRelease") {
+        finalizedBy("prepareApkDownload")
+    }
 }
 
 tasks.register("prepareApkDownload") {
+    val rootDirFile = rootProject.projectDir
+    val apkOutputDir = layout.buildDirectory.dir("outputs/apk").get().asFile
     doLast {
-        val root = project.rootDir
-        val buildApk = File(project.projectDir, "build/outputs/apk/debug/app-debug.apk")
-        val buildOutputsDir = File(root, ".build-outputs")
-        val apkDownloadDir = File(root, "APK_DOWNLOAD")
+        val buildOutputsDir = File(rootDirFile, ".build-outputs")
+        val apkDownloadDir = File(rootDirFile, "APK_DOWNLOAD")
         
         if (!buildOutputsDir.exists()) {
             buildOutputsDir.mkdirs()
@@ -170,22 +196,39 @@ tasks.register("prepareApkDownload") {
         
         val buildOutputsApk = File(buildOutputsDir, "app-debug.apk")
         val apkDownloadApk = File(apkDownloadDir, "app-debug.apk")
+        val rootApk = File(rootDirFile, "app-debug.apk")
         
         println("=== APK Preparation Details ===")
-        println("Local app build path: ${buildApk.absolutePath}")
+        println("Scanning build outputs at: ${apkOutputDir.absolutePath}")
         
-        if (buildApk.exists()) {
-            println("Found fresh APK at build directory: ${buildApk.absolutePath} (Size: ${buildApk.length()} bytes)")
-            buildApk.copyTo(buildOutputsApk, overwrite = true)
+        var foundApk: File? = null
+        if (apkOutputDir.exists()) {
+            apkOutputDir.walkTopDown().forEach { file ->
+                if (file.isFile && file.name.endsWith(".apk") && !file.name.contains("unaligned")) {
+                    foundApk = file
+                    println("Found generated APK: ${file.absolutePath} (Size: ${file.length()} bytes)")
+                }
+            }
+        }
+        
+        val apkFile = foundApk ?: buildOutputsApk
+        
+        if (apkFile.exists()) {
+            println("Preparing APK from source: ${apkFile.absolutePath} (Size: ${apkFile.length()} bytes)")
+            apkFile.copyTo(buildOutputsApk, overwrite = true)
             println("Copied to ${buildOutputsApk.absolutePath}")
-            buildApk.copyTo(apkDownloadApk, overwrite = true)
+            apkFile.copyTo(apkDownloadApk, overwrite = true)
             println("Copied to ${apkDownloadApk.absolutePath}")
+            apkFile.copyTo(rootApk, overwrite = true)
+            println("Copied to ${rootApk.absolutePath}")
         } else {
-            println("No fresh APK found at build directory: ${buildApk.absolutePath}")
+            println("No fresh APK found at build directory scanning.")
             if (buildOutputsApk.exists()) {
                 println("Found existing APK in .build-outputs: ${buildOutputsApk.absolutePath} (Size: ${buildOutputsApk.length()} bytes)")
                 buildOutputsApk.copyTo(apkDownloadApk, overwrite = true)
                 println("Copied existing APK to ${apkDownloadApk.absolutePath}")
+                buildOutputsApk.copyTo(rootApk, overwrite = true)
+                println("Copied existing APK to ${rootApk.absolutePath}")
             } else {
                 println("ERROR: No APK found in .build-outputs either!")
             }

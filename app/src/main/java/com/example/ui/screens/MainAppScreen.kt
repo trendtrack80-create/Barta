@@ -9,7 +9,7 @@ import android.net.NetworkRequest
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.*
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.Image
@@ -124,6 +124,13 @@ fun MainAppScreen(
                 AuthScreen(viewModel = viewModel)
             }
         } else {
+            val navigationStack by viewModel.navigationStack.collectAsStateWithLifecycle()
+            val canGoBack = activeChatContact != null || navigationStack.size > 1
+
+            BackHandler(enabled = canGoBack) {
+                viewModel.navigateBack()
+            }
+
             Scaffold(
                 topBar = {
                     if (!isConnected) {
@@ -2348,9 +2355,25 @@ fun StatusTabScreen(
         if (activeStoryIndex in 0 until storyCount) {
             val activeStory = stories[activeStoryIndex]
             var progress by remember { mutableStateOf(0f) }
+            var showViewersList by remember { mutableStateOf(false) }
+            var showDeleteConfirmation by remember { mutableStateOf<String?>(null) }
+
+            // Automatically mark as viewed if it's not my own status
+            LaunchedEffect(activeStory.id) {
+                if (activeStory.phone != myPhone) {
+                    viewModel.markStatusAsViewed(activeStory.id, activeStory.viewers)
+                }
+            }
+
+            // Reset viewers list visibility on story index change
+            LaunchedEffect(activeStoryIndex) {
+                showViewersList = false
+                showDeleteConfirmation = null
+            }
 
             // Automatically progress each story ticking up to 1f and shifting index
-            LaunchedEffect(activeStoryIndex) {
+            LaunchedEffect(activeStoryIndex, showViewersList, showDeleteConfirmation) {
+                if (showViewersList || showDeleteConfirmation != null) return@LaunchedEffect
                 progress = 0f
                 while (progress < 1.0f) {
                     delay(50) // 5 seconds per story
@@ -2364,6 +2387,10 @@ fun StatusTabScreen(
                 }
             }
 
+            val loversList = if (activeStory.loves.isEmpty()) emptyList() else activeStory.loves.split(",")
+            val viewersList = if (activeStory.viewers.isEmpty()) emptyList() else activeStory.viewers.split(",")
+            val hasLoved = loversList.any { it.startsWith("$myPhone:") }
+
             Dialog(
                 onDismissRequest = { activeStoryList = null },
                 properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
@@ -2373,7 +2400,7 @@ fun StatusTabScreen(
                         .fillMaxSize()
                         .background(if (activeStory.mediaUrl.isNullOrEmpty()) Color(activeStory.bgColorVal) else Color.Black)
                 ) {
-                    // Center content
+                    // 1. Center content (Image or Text)
                     if (!activeStory.mediaUrl.isNullOrEmpty()) {
                         // Image status
                         AsyncImage(
@@ -2392,8 +2419,7 @@ fun StatusTabScreen(
                                     .fillMaxWidth()
                                     .align(Alignment.BottomCenter)
                                     .background(Color.Black.copy(alpha = 0.6f))
-                                    .padding(vertical = 20.dp, horizontal = 16.dp)
-                                    .navigationBarsPadding()
+                                    .padding(vertical = 120.dp, horizontal = 16.dp) // padded so it doesn't overlap bottom action bar
                             ) {
                                 Text(
                                     text = activeStory.text,
@@ -2423,56 +2449,7 @@ fun StatusTabScreen(
                         }
                     }
 
-                    // Top Indicators & Header controls
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 20.dp)
-                            .statusBarsPadding()
-                    ) {
-                        // Staggered dashes logic
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            for (i in 0 until storyCount) {
-                                val segmentProgress = when {
-                                    i < activeStoryIndex -> 1.0f
-                                    i == activeStoryIndex -> progress
-                                    else -> 0.0f
-                                }
-                                LinearProgressIndicator(
-                                    progress = { segmentProgress },
-                                    color = Color.White,
-                                    trackColor = Color.White.copy(alpha = 0.3f),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(4.dp)
-                                        .clip(RoundedCornerShape(2.dp))
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        // Left Side Avatar Name, Right Side Close
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            AvatarView(name = activeStory.name, base64 = activeStory.avatar, size = 40)
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(activeStory.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                                Text(formatTimeAgo(activeStory.timestamp), color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
-                            }
-                            IconButton(onClick = { activeStoryList = null }) {
-                                Icon(Icons.Default.Close, contentDescription = "Close Story", tint = Color.White)
-                            }
-                        }
-                    }
-
-                    // Hot-zones for clicking previous/next (invisible overlay buttons)
+                    // 2. Hot-zones for clicking previous/next (invisible overlay buttons)
                     Row(modifier = Modifier.fillMaxSize()) {
                         // Left 1/3: Back trigger
                         Box(
@@ -2506,6 +2483,317 @@ fun StatusTabScreen(
                                         activeStoryList = null
                                     }
                                 }
+                        )
+                    }
+
+                    // 3. Top Indicators & Header controls (Drawn over hot-zones)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 20.dp)
+                            .statusBarsPadding()
+                    ) {
+                        // Staggered dashes logic
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            for (i in 0 until storyCount) {
+                                val segmentProgress = when {
+                                    i < activeStoryIndex -> 1.0f
+                                    i == activeStoryIndex -> progress
+                                    else -> 0.0f
+                                }
+                                LinearProgressIndicator(
+                                    progress = { segmentProgress },
+                                    color = Color.White,
+                                    trackColor = Color.White.copy(alpha = 0.3f),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(4.dp)
+                                        .clip(RoundedCornerShape(2.dp))
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        // Left Side Avatar Name, Right Side Delete & Close
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            AvatarView(name = activeStory.name, base64 = activeStory.avatar, size = 40)
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(activeStory.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                Text(formatTimeAgo(activeStory.timestamp), color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
+                            }
+                            
+                            // Delete button for status owner
+                            if (activeStory.phone == myPhone) {
+                                IconButton(
+                                    onClick = {
+                                        showDeleteConfirmation = activeStory.id
+                                    }
+                                ) {
+                                    Icon(Icons.Default.Delete, contentDescription = "Delete Status", tint = Color.White)
+                                }
+                            }
+
+                            IconButton(onClick = { activeStoryList = null }) {
+                                Icon(Icons.Default.Close, contentDescription = "Close Story", tint = Color.White)
+                            }
+                        }
+                    }
+
+                    // 4. Bottom action bar (Love, Viewers)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .align(Alignment.BottomCenter)
+                            .navigationBarsPadding()
+                            .padding(bottom = 24.dp, start = 16.dp, end = 16.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color.Black.copy(alpha = 0.5f), shape = RoundedCornerShape(24.dp))
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            // Left: Love reaction (Yellow Color)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                IconButton(
+                                    onClick = {
+                                        viewModel.toggleLoveStatus(activeStory.id, activeStory.loves)
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Favorite,
+                                        contentDescription = "Love Status",
+                                        tint = Color.Yellow,
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                }
+                                if (loversList.isNotEmpty()) {
+                                    Text(
+                                        text = loversList.size.toString(),
+                                        color = Color.Yellow,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp
+                                    )
+                                }
+                            }
+
+                            // Right: If owner, show "views count" clickable to see who viewed. Else show simple view indicator
+                            if (activeStory.phone == myPhone) {
+                                Row(
+                                    modifier = Modifier
+                                        .background(Color.White.copy(alpha = 0.2f), shape = RoundedCornerShape(16.dp))
+                                        .clickable { showViewersList = true }
+                                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.RemoveRedEye,
+                                        contentDescription = "Viewers",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Text(
+                                        text = "${viewersList.size} ${txt("জন দেখেছেন", "views")}",
+                                        color = Color.White,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            } else {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    modifier = Modifier.padding(end = 8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.DoneAll,
+                                        contentDescription = "Seen",
+                                        tint = WhatsAppGreenVal,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Text(
+                                        text = txt("পঠিত", "Seen"),
+                                        color = Color.White.copy(alpha = 0.8f),
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // 5. Viewers overlay list
+                    if (showViewersList) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.Black.copy(alpha = 0.7f))
+                                .clickable { showViewersList = false },
+                            contentAlignment = Alignment.BottomCenter
+                        ) {
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .fillMaxHeight(0.5f)
+                                    .clickable(enabled = false) { /* Prevent clicks through to background */ },
+                                shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+                                colors = CardDefaults.cardColors(containerColor = if (isDark) Color(0xFF1E293B) else Color.White)
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(16.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "${txt("কারা দেখেছেন", "Viewers")} (${viewersList.size})",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 18.sp,
+                                            color = if (isDark) Color.White else Color.Black
+                                        )
+                                        IconButton(onClick = { showViewersList = false }) {
+                                            Icon(Icons.Default.Close, contentDescription = "Close Viewers List", tint = if (isDark) Color.White else Color.Black)
+                                        }
+                                    }
+
+                                    HorizontalDivider(color = if (isDark) Color.Gray.copy(alpha = 0.3f) else Color.LightGray)
+
+                                    if (viewersList.isEmpty()) {
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .fillMaxWidth(),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = txt("এখনো কেউ দেখেননি", "No views yet"),
+                                                color = Color.Gray,
+                                                fontSize = 14.sp
+                                            )
+                                        }
+                                    } else {
+                                        LazyColumn(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .fillMaxWidth(),
+                                            contentPadding = PaddingValues(vertical = 8.dp)
+                                        ) {
+                                            items(viewersList) { viewerInfo ->
+                                                val parts = viewerInfo.split(":")
+                                                val viewerPhone = parts.getOrNull(0) ?: ""
+                                                val viewerName = parts.getOrNull(1) ?: viewerPhone
+                                                val isLover = loversList.any { it.startsWith("$viewerPhone:") }
+
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .padding(vertical = 8.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.SpaceBetween
+                                                ) {
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        AvatarView(name = viewerName, base64 = "", size = 36)
+                                                        Spacer(modifier = Modifier.width(12.dp))
+                                                        Column {
+                                                            Text(
+                                                                text = viewerName,
+                                                                fontWeight = FontWeight.Bold,
+                                                                fontSize = 14.sp,
+                                                                color = if (isDark) Color.White else Color.Black
+                                                            )
+                                                            Text(
+                                                                text = viewerPhone,
+                                                                fontSize = 11.sp,
+                                                                color = Color.Gray
+                                                            )
+                                                        }
+                                                    }
+                                                    
+                                                    // Show Yellow Heart if this viewer also liked/loved the status
+                                                    if (isLover) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Favorite,
+                                                            contentDescription = "Loved status",
+                                                            tint = Color.Yellow,
+                                                            modifier = Modifier
+                                                                .size(20.dp)
+                                                                .padding(end = 4.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 6. Delete confirmation dialog
+                    if (showDeleteConfirmation != null) {
+                        AlertDialog(
+                            onDismissRequest = { showDeleteConfirmation = null },
+                            title = {
+                                Text(
+                                    text = txt("স্ট্যাটাস মুছে ফেলবেন?", "Delete Status?"),
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isDark) Color.White else Color.Black
+                                )
+                            },
+                            text = {
+                                Text(
+                                    text = txt(
+                                        "আপনি কি নিশ্চিত যে আপনি এই স্ট্যাটাসটি মুছে ফেলতে চান?",
+                                        "Are you sure you want to remove this status?"
+                                    ),
+                                    color = if (isDark) Color.LightGray else Color.DarkGray
+                                )
+                            },
+                            confirmButton = {
+                                Button(
+                                    onClick = {
+                                        val toDelete = showDeleteConfirmation ?: ""
+                                        showDeleteConfirmation = null
+                                        viewModel.deleteStatus(toDelete) { success ->
+                                            if (success) {
+                                                if (activeStoryIndex < storyCount - 1) {
+                                                    activeStoryIndex++
+                                                } else {
+                                                    activeStoryList = null
+                                                }
+                                            }
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                                ) {
+                                    Text(text = txt("মুছে ফেলুন", "Delete"), color = Color.White)
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(
+                                    onClick = { showDeleteConfirmation = null }
+                                ) {
+                                    Text(text = txt("বাতিল", "Cancel"), color = if (isDark) Color.LightGray else Color.Gray)
+                                }
+                            },
+                            containerColor = if (isDark) Color(0xFF1E293B) else Color.White
                         )
                     }
                 }
@@ -2884,71 +3172,7 @@ fun SettingsTabScreen(
             }
         }
 
-        Text(
-            text = txt("এআই সহকারী কনফিগারেশন", "AI Assistant Configuration"),
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-            modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
-        )
 
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 24.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            shape = RectangleShape
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                val functionsUrl by viewModel.firebaseFunctionsBaseUrl.collectAsStateWithLifecycle()
-                var inputUrl by remember { mutableStateOf(functionsUrl) }
-                
-                LaunchedEffect(functionsUrl) {
-                    inputUrl = functionsUrl
-                }
-
-                Text(
-                    text = txt("ফায়ারবেস ক্লাউড ফাংশন ইউআরএল", "Firebase Cloud Functions URL"),
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 15.sp,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = txt(
-                        "আপনার এআই পিন সুরক্ষিত রাখতে deployed ক্লাউড ফাংশনের বেস ইউআরএল দিন। ফাঁকা রাখলে এটি অ্যাপের ভেতর থেকে সুরক্ষিত সিস্টেমে সরাসরি কাজ করবে।",
-                        "Configure your Cloud Function base URL for advanced production security. Leaving it blank triggers secure app-level fallback mode."
-                    ),
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = inputUrl,
-                    onValueChange = { inputUrl = it },
-                    placeholder = { Text("https://us-central1-barta-chat-927ec.cloudfunctions.net") },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                        focusedBorderColor = WhatsAppTealVal,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outline
-                    ),
-                    modifier = Modifier.fillMaxWidth().testTag("functions_url_input")
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Button(
-                    onClick = {
-                        viewModel.saveFirebaseFunctionsUrl(inputUrl)
-                        Toast.makeText(viewModel.getApplication(), txt("কনফিগারেশন সফলভাবে সংরক্ষিত হয়েছে!", "Configuration successfully saved!"), Toast.LENGTH_SHORT).show()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = WhatsAppTealVal),
-                    modifier = Modifier.align(Alignment.End).testTag("save_functions_url_button")
-                ) {
-                    Text(txt("সংরক্ষণ করুন", "Save"), color = Color.White)
-                }
-            }
-        }
 
         // Logout Area
         Card(
@@ -4363,6 +4587,64 @@ fun ProfileTabScreen(
     }
 }
 
+@Composable
+fun ChatGptThinkingIndicator() {
+    val transition = rememberInfiniteTransition(label = "dots")
+    val dot1Alpha by transition.animateFloat(
+        initialValue = 0.2f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = keyframes {
+                durationMillis = 600
+                0.2f at 0
+                1.0f at 200
+                0.2f at 400
+            },
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "dot1"
+    )
+    val dot2Alpha by transition.animateFloat(
+        initialValue = 0.2f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = keyframes {
+                durationMillis = 600
+                0.2f at 150
+                1.0f at 350
+                0.2f at 550
+            },
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "dot2"
+    )
+    val dot3Alpha by transition.animateFloat(
+        initialValue = 0.2f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = keyframes {
+                durationMillis = 600
+                0.2f at 300
+                1.0f at 500
+                0.2f at 600
+            },
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "dot3"
+    )
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+    ) {
+        val dotColor = Color(0xFF00A884)
+        Box(modifier = Modifier.size(8.dp).background(dotColor.copy(alpha = dot1Alpha), CircleShape))
+        Box(modifier = Modifier.size(8.dp).background(dotColor.copy(alpha = dot2Alpha), CircleShape))
+        Box(modifier = Modifier.size(8.dp).background(dotColor.copy(alpha = dot3Alpha), CircleShape))
+    }
+}
+
 // WhatsApp style message console with header displaying group participants details + active typing signals
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -4374,11 +4656,13 @@ fun ChatWindowScreen(
     val messageList by viewModel.activeMessages.collectAsStateWithLifecycle()
     val myNumber by viewModel.myNumber.collectAsStateWithLifecycle()
     val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
+    val isDarkTheme by viewModel.isDarkMode.collectAsStateWithLifecycle()
     val txt = getTranslator(viewModel = viewModel)
     var inputText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     val focusManager = LocalFocusManager.current
     var showGroupManageDialog by remember { mutableStateOf(false) }
+    val dialogContext = LocalContext.current
 
     // Attachment States
     var showAttachOptions by remember { mutableStateOf(false) }
@@ -4386,7 +4670,149 @@ fun ChatWindowScreen(
     var showSelectVideoDialog by remember { mutableStateOf(false) }
     var selectedImageForPreview by remember { mutableStateOf<String?>(null) }
     var selectedVideoForPlayback by remember { mutableStateOf<String?>(null) }
+    var messageToForward by remember { mutableStateOf<Message?>(null) }
     var showEmojiPicker by remember { mutableStateOf(false) }
+
+    if (messageToForward != null) {
+        val contactsList by viewModel.contacts.collectAsStateWithLifecycle()
+        var selectedRecipients by remember { mutableStateOf(setOf<Contact>()) }
+        var forwardSearchQuery by remember { mutableStateOf("") }
+
+        AlertDialog(
+            onDismissRequest = { messageToForward = null },
+            title = {
+                Text(
+                    text = txt("বার্তা এগিয়ে দিন...", "Forward message..."),
+                    fontWeight = FontWeight.Bold,
+                    color = WhatsAppTealVal
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 300.dp)
+                ) {
+                    OutlinedTextField(
+                        value = forwardSearchQuery,
+                        onValueChange = { forwardSearchQuery = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 8.dp),
+                        placeholder = { Text(txt("খুঁজুন...", "Search contacts...")) },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                        singleLine = true,
+                        shape = RoundedCornerShape(24.dp)
+                    )
+
+                    val filteredContacts = contactsList.filter {
+                        it.name.contains(forwardSearchQuery, ignoreCase = true) ||
+                        it.phone.contains(forwardSearchQuery)
+                    }
+
+                    if (filteredContacts.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = txt("কোনো পরিচিতি পাওয়া যায়নি", "No contacts found"),
+                                color = Color.Gray,
+                                fontSize = 14.sp
+                            )
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f)
+                        ) {
+                            items(filteredContacts) { contact ->
+                                val isSelected = selectedRecipients.contains(contact)
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            selectedRecipients = if (isSelected) {
+                                                selectedRecipients - contact
+                                            } else {
+                                                selectedRecipients + contact
+                                            }
+                                        }
+                                        .padding(vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    AvatarView(name = contact.name, base64 = contact.profilePicUri, size = 40)
+
+                                    Spacer(modifier = Modifier.width(12.dp))
+
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = contact.name,
+                                            fontWeight = FontWeight.SemiBold,
+                                            fontSize = 14.sp,
+                                            color = if (isDarkTheme) Color.White else Color.Black
+                                        )
+                                        Text(
+                                            text = if (contact.isGroup) "গ্রুপ (Group)" else contact.phone,
+                                            fontSize = 12.sp,
+                                            color = Color.Gray
+                                        )
+                                    }
+
+                                    androidx.compose.material3.Checkbox(
+                                        checked = isSelected,
+                                        onCheckedChange = {
+                                            selectedRecipients = if (isSelected) {
+                                                selectedRecipients - contact
+                                            } else {
+                                                selectedRecipients + contact
+                                            }
+                                        },
+                                        colors = androidx.compose.material3.CheckboxDefaults.colors(checkedColor = WhatsAppGreenVal)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val msg = messageToForward
+                        if (msg != null && selectedRecipients.isNotEmpty()) {
+                            viewModel.forwardMessage(msg, selectedRecipients.toList())
+                            Toast.makeText(
+                                dialogContext,
+                                txt("বার্তা এগিয়ে দেওয়া হয়েছে!", "Message forwarded successfully!"),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                        messageToForward = null
+                    },
+                    enabled = selectedRecipients.isNotEmpty(),
+                    colors = ButtonDefaults.buttonColors(containerColor = WhatsAppTealVal)
+                ) {
+                    Text(
+                        text = if (selectedRecipients.isEmpty()) {
+                            txt("এগিয়ে দিন", "Forward")
+                        } else {
+                            "${txt("এগিয়ে দিন", "Forward")} (${selectedRecipients.size})"
+                        },
+                        color = Color.White
+                    )
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { messageToForward = null }) {
+                    Text(txt("বাতিল", "Cancel"))
+                }
+            }
+        )
+    }
 
     val context = LocalContext.current
     val photoPickerLauncher = rememberLauncherForActivityResult(
@@ -4501,7 +4927,7 @@ fun ChatWindowScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(WhatsAppGrayBackgroundVal)
+            .background(if (isDarkTheme) PremiumBackgroundDark else WhatsAppGrayBackgroundVal)
     ) {
         // Chat Header with details
         TopAppBar(
@@ -4549,7 +4975,15 @@ fun ChatWindowScreen(
                             )
                         } else {
                             Text(
-                                text = if (contact.typingStatus.isNotEmpty()) contact.typingStatus else formatLastSeenDynamic(contact.lastSeen, appLanguage),
+                                text = if (contact.typingStatus.isNotEmpty()) {
+                                    if (contact.phone == "01300000000" || contact.isSimulated) {
+                                        if (appLanguage == "bn") "ভাবছে... 🤖💭" else "thinking... 🤖💭"
+                                    } else {
+                                        if (appLanguage == "bn") "লিখছে..." else "typing..."
+                                    }
+                                } else {
+                                    formatLastSeenDynamic(contact.lastSeen, appLanguage)
+                                },
                                 color = if (contact.typingStatus.isNotEmpty()) WhatsAppGreenVal else Color(0xB3FFFFFF),
                                 fontSize = 11.sp
                             )
@@ -4598,11 +5032,13 @@ fun ChatWindowScreen(
                     isMe = isMe,
                     isGroupMsg = contact.isGroup,
                     isBengali = appLanguage == "bn",
+                    isDark = isDarkTheme,
                     onDeleteForMe = { viewModel.deleteMessageForMe(msg.id) },
                     onDeleteForEveryone = { viewModel.deleteMessageForEveryone(msg.id) },
                     onEditMessage = { msgId, editedTxt -> viewModel.editMessage(msgId, editedTxt) },
                     onImageClick = { selectedImageForPreview = it },
                     onVideoClick = { selectedVideoForPlayback = it },
+                    onForward = { messageToForward = it },
                     onRegenerate = if (contact.phone == "01300000000") { { viewModel.regenerateLastAIResponse() } } else null
                 )
             }
@@ -4616,7 +5052,7 @@ fun ChatWindowScreen(
                     ) {
                         Surface(
                             shape = RoundedCornerShape(12.dp, 12.dp, 12.dp, 0.dp),
-                            color = Color.White,
+                            color = Color(0xFFF0F2F5),
                             shadowElevation = 1.dp,
                             modifier = Modifier.widthIn(max = 280.dp)
                         ) {
@@ -4627,10 +5063,14 @@ fun ChatWindowScreen(
                                     } else {
                                         if (appLanguage == "bn") "লিখছে..." else "typing..."
                                     },
-                                    color = Color.Gray,
+                                    color = Color(0xFF54656F),
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.Medium
                                 )
+                                if (contact.phone == "01300000000" || contact.isSimulated) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    ChatGptThinkingIndicator()
+                                }
                             }
                         }
                     }
@@ -4643,20 +5083,20 @@ fun ChatWindowScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Color(0xFFF0F2F5))
+                .background(if (isDarkTheme) Color(0xFF1E293B) else Color(0xFFF0F2F5))
                 .padding(horizontal = 12.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             listOf("আসসালামু আলাইকুম!", "কেমন আছেন?", "ধন্যবাদ 😊", "গ্রুপ চ্যাট 🟢", "বার্তা").forEach { shortcut ->
                 Box(
                     modifier = Modifier
-                        .background(Color.White, shape = RoundedCornerShape(12.dp))
+                        .background(if (isDarkTheme) Color(0xFF0F172A) else Color.White, shape = RoundedCornerShape(12.dp))
                         .clickable {
                             inputText += shortcut + " "
                         }
                         .padding(horizontal = 10.dp, vertical = 4.dp)
                 ) {
-                    Text(text = shortcut, fontSize = 11.sp, color = WhatsAppTealDarkVal)
+                    Text(text = shortcut, fontSize = 11.sp, color = if (isDarkTheme) WhatsAppTealVal else WhatsAppTealDarkVal)
                 }
             }
         }
@@ -4743,7 +5183,7 @@ fun ChatWindowScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Color(0xFFF0F2F5))
+                .background(if (isDarkTheme) Color(0xFF1E293B) else Color(0xFFF0F2F5))
                 .padding(8.dp)
                 .navigationBarsPadding(),
             verticalAlignment = Alignment.CenterVertically
@@ -4751,7 +5191,7 @@ fun ChatWindowScreen(
             // Text Input Card
             Card(
                 shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
+                colors = CardDefaults.cardColors(containerColor = if (isDarkTheme) Color(0xFF0F172A) else Color.White),
                 modifier = Modifier
                     .weight(1f)
                     .padding(end = 8.dp)
@@ -4792,10 +5232,10 @@ fun ChatWindowScreen(
                             }
                         },
                         placeholder = { Text("বার্তা লিখুন...", color = Color.Gray) },
-                        textStyle = androidx.compose.ui.text.TextStyle(color = Color.Black, fontSize = 16.sp),
+                        textStyle = androidx.compose.ui.text.TextStyle(color = if (isDarkTheme) Color.White else Color.Black, fontSize = 16.sp),
                         colors = TextFieldDefaults.colors(
-                            focusedTextColor = Color.Black,
-                            unfocusedTextColor = Color.Black,
+                            focusedTextColor = if (isDarkTheme) Color.White else Color.Black,
+                            unfocusedTextColor = if (isDarkTheme) Color.White else Color.Black,
                             focusedContainerColor = Color.Transparent,
                             unfocusedContainerColor = Color.Transparent,
                             focusedIndicatorColor = Color.Transparent,
@@ -4856,14 +5296,14 @@ fun ChatWindowScreen(
         }
     }
 
-    // Modal dialogue selecting caricature picture for mock Firebase storage upload
+    // Modal dialogue selecting caricature picture for mock upload
     if (showSelectImageDialog) {
         AlertDialog(
             onDismissRequest = { showSelectImageDialog = false },
-            title = { Text("মক ছবি পাঠানো (Firebase Storage)", fontWeight = FontWeight.Bold, color = WhatsAppTealVal) },
+            title = { Text("ছবি ও মিডিয়া পাঠানো", fontWeight = FontWeight.Bold, color = WhatsAppTealVal) },
             text = {
                 Column {
-                    Text("অনলাইন ফায়ারবেস ড্রাইভে ছবি আপলোড করে পাঠাতে নিচের যেকোনো একটি ছবি স্পর্শ করুন:", fontSize = 12.sp, color = Color.Gray)
+                    Text("নিচের যেকোনো একটি ডামি ছবি স্পর্শ করুন অথবা গ্যালারি বা ক্যামেরা ব্যবহার করুনঃ", fontSize = 12.sp, color = Color.Gray)
                     Spacer(modifier = Modifier.height(14.dp))
                     val dummyPhotos = listOf("pic1", "pic2", "pic3", "pic4", "pic5", "pic6")
                     Row(
@@ -5114,15 +5554,16 @@ fun ChatMsgBubble(
     isMe: Boolean,
     isGroupMsg: Boolean,
     isBengali: Boolean,
+    isDark: Boolean,
     onDeleteForMe: () -> Unit,
     onDeleteForEveryone: () -> Unit,
     onEditMessage: (String, String) -> Unit,
     onImageClick: (String) -> Unit,
     onVideoClick: (String) -> Unit,
+    onForward: (Message) -> Unit,
     onRegenerate: (() -> Unit)? = null
 ) {
     val layoutAlign = if (isMe) Alignment.CenterEnd else Alignment.CenterStart
-    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
     val bubbleColor = if (isMe) {
         if (isDark) Color(0xFF0F766E) else WhatsAppLightGreenVal
     } else {
@@ -5170,6 +5611,27 @@ fun ChatMsgBubble(
             Column(
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
             ) {
+                if (message.isForwarded) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Reply,
+                            contentDescription = null,
+                            tint = Color.Gray,
+                            modifier = Modifier.size(12.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = if (isBengali) "এগিয়ে দেওয়া হয়েছে" else "Forwarded",
+                            fontSize = 10.sp,
+                            color = Color.Gray,
+                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                        )
+                    }
+                }
+
                 // Sender name tag (Group chats)
                 if (isGroupMsg && !isMe && message.senderName.isNotEmpty()) {
                     Text(
@@ -5299,7 +5761,7 @@ fun ChatMsgBubble(
                         Spacer(modifier = Modifier.width(4.dp))
                         if (message.isPending) {
                             Icon(
-                                imageVector = Icons.Default.Schedule,
+                                imageVector = Icons.Default.Pause,
                                 contentDescription = "Pending status",
                                 tint = Color.Gray,
                                 modifier = Modifier.size(14.dp)
@@ -5400,6 +5862,20 @@ fun ChatMsgBubble(
                             colors = ButtonDefaults.buttonColors(containerColor = WhatsAppTealVal)
                         ) {
                             Text(txt("এআই উত্তর পুনরায় তৈরি করুন", "Regenerate Response"), color = Color.White)
+                        }
+                    }
+
+                    // Option 6: Forward Message (Available for all non-deleted messages)
+                    if (!message.isDeletedForEveryone) {
+                        Button(
+                            modifier = Modifier.fillMaxWidth().testTag("forward_message_button"),
+                            onClick = {
+                                showDeleteConfirmationDialog = false
+                                onForward(message)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F9D58))
+                        ) {
+                            Text(txt("বার্তা এগিয়ে দিন (Forward)", "Forward Message"), color = Color.White)
                         }
                     }
 
