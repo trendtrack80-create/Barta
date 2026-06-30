@@ -156,19 +156,13 @@ tasks.register("prepareApkDownload") {
     val rootDirFile = rootProject.projectDir
     val apkOutputDir = layout.buildDirectory.dir("outputs/apk").get().asFile
     doLast {
-        val buildOutputsDir = File(rootDirFile, ".build-outputs")
         val apkDownloadDir = File(rootDirFile, "APK_DOWNLOAD")
         
-        if (!buildOutputsDir.exists()) {
-            buildOutputsDir.mkdirs()
-        }
         if (!apkDownloadDir.exists()) {
             apkDownloadDir.mkdirs()
         }
         
-        val buildOutputsApk = File(buildOutputsDir, "app-debug.apk")
         val apkDownloadApk = File(apkDownloadDir, "app-debug.apk")
-        val rootApk = File(rootDirFile, "app-debug.apk")
         
         println("=== APK Preparation Details ===")
         println("Scanning build outputs at: ${apkOutputDir.absolutePath}")
@@ -183,26 +177,18 @@ tasks.register("prepareApkDownload") {
             }
         }
         
-        val apkFile = foundApk ?: buildOutputsApk
+        val apkFile = foundApk
         
-        if (apkFile.exists()) {
+        if (apkFile != null && apkFile.exists()) {
             println("Preparing APK from source: ${apkFile.absolutePath} (Size: ${apkFile.length()} bytes)")
-            apkFile.copyTo(buildOutputsApk, overwrite = true)
-            println("Copied to ${buildOutputsApk.absolutePath}")
             apkFile.copyTo(apkDownloadApk, overwrite = true)
             println("Copied to ${apkDownloadApk.absolutePath}")
-            apkFile.copyTo(rootApk, overwrite = true)
-            println("Copied to ${rootApk.absolutePath}")
         } else {
             println("No fresh APK found at build directory scanning.")
-            if (buildOutputsApk.exists()) {
-                println("Found existing APK in .build-outputs: ${buildOutputsApk.absolutePath} (Size: ${buildOutputsApk.length()} bytes)")
-                buildOutputsApk.copyTo(apkDownloadApk, overwrite = true)
-                println("Copied existing APK to ${apkDownloadApk.absolutePath}")
-                buildOutputsApk.copyTo(rootApk, overwrite = true)
-                println("Copied existing APK to ${rootApk.absolutePath}")
+            if (apkDownloadApk.exists()) {
+                println("Found existing APK in APK_DOWNLOAD: ${apkDownloadApk.absolutePath} (Size: ${apkDownloadApk.length()} bytes)")
             } else {
-                println("ERROR: No APK found in .build-outputs either!")
+                println("ERROR: No APK found anywhere!")
             }
         }
         
@@ -211,18 +197,6 @@ tasks.register("prepareApkDownload") {
             println("Final APK Size: ${apkDownloadApk.length()} bytes")
         } else {
             println("FAILED: APK download file could not be created!")
-        }
-    }
-}
-
-tasks.register("printFileSizes") {
-    doLast {
-        val rootDirFile = rootProject.projectDir
-        println("=== Large Files (>100KB) in Workspace ===")
-        rootDirFile.walkTopDown().forEach { file ->
-            if (file.isFile && file.length() > 100 * 1024 && !file.absolutePath.contains(".gradle") && !file.absolutePath.contains("build")) {
-                println("${file.absolutePath} - ${file.length() / 1024} KB")
-            }
         }
     }
 }

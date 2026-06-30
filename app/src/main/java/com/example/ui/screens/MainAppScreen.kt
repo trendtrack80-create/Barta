@@ -27,8 +27,10 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -57,6 +59,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.graphics.RectangleShape
@@ -1334,6 +1337,7 @@ fun ChatsTabScreen(
 
     val isDark by viewModel.isDarkMode.collectAsStateWithLifecycle()
     var activeSubTab by remember { mutableStateOf("all") }
+    var showCreateGroupDialog by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -1411,6 +1415,23 @@ fun ChatsTabScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // New Group Action "+" Button
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .background(if (isDark) Color(0xFF1E293B) else Color.White, CircleShape)
+                            .clickable { showCreateGroupDialog = true }
+                            .testTag("chats_create_group_button"),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "New Group",
+                            tint = if (isDark) Color.White else Color(0xFF1E293B),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
                     // Dark mode button
                     Box(
                         modifier = Modifier
@@ -1694,6 +1715,18 @@ fun ChatsTabScreen(
             }
         }
     }
+
+    if (showCreateGroupDialog) {
+        CreateGroupDialog(
+            contacts = contactsList.filter { !it.isGroup && it.phone != "01300000000" },
+            viewModel = viewModel,
+            onDismiss = { showCreateGroupDialog = false },
+            onConfirm = { groupName, selected, photo, desc ->
+                viewModel.createGroup(groupName, selected, photo, desc)
+                showCreateGroupDialog = false
+            }
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1849,11 +1882,11 @@ fun GroupsTabScreen(
 
     if (showCreateGroupDialog) {
         CreateGroupDialog(
-            contacts = contactsList.filter { !it.isGroup },
+            contacts = contactsList.filter { !it.isGroup && it.phone != "01300000000" },
             viewModel = viewModel,
             onDismiss = { showCreateGroupDialog = false },
-            onConfirm = { groupName, selected ->
-                viewModel.createGroup(groupName, selected)
+            onConfirm = { groupName, selected, photo, desc ->
+                viewModel.createGroup(groupName, selected, photo, desc)
                 showCreateGroupDialog = false
             }
         )
@@ -2574,9 +2607,9 @@ fun StatusTabScreen(
                                     }
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.Favorite,
+                                        imageVector = if (hasLoved) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                                         contentDescription = "Love Status",
-                                        tint = Color.Yellow,
+                                        tint = if (hasLoved) Color.Yellow else Color.White,
                                         modifier = Modifier.size(28.dp)
                                     )
                                 }
@@ -3753,11 +3786,11 @@ fun ContactsTabScreen(
 
             if (showCreateGroupDialog) {
                 CreateGroupDialog(
-                    contacts = contactList.filter { !it.isGroup },
+                    contacts = contactList.filter { !it.isGroup && it.phone != "01300000000" },
                     viewModel = viewModel,
                     onDismiss = { showCreateGroupDialog = false },
-                    onConfirm = { name, selected ->
-                        viewModel.createGroup(name, selected)
+                    onConfirm = { name, selected, photo, desc ->
+                        viewModel.createGroup(name, selected, photo, desc)
                         showCreateGroupDialog = false
                     }
                 )
@@ -3772,92 +3805,277 @@ fun CreateGroupDialog(
     contacts: List<Contact>,
     viewModel: ChatViewModel,
     onDismiss: () -> Unit,
-    onConfirm: (groupName: String, selected: List<Contact>) -> Unit
+    onConfirm: (groupName: String, selected: List<Contact>, groupPhoto: String, groupDescription: String) -> Unit
 ) {
     val context = LocalContext.current
     val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
     val isBn = appLanguage == "bn"
     fun txt(bn: String, en: String) = if (isBn) bn else en
 
+    var step by remember { mutableStateOf(1) }
     var groupName by remember { mutableStateOf("") }
+    var groupDescription by remember { mutableStateOf("") }
+    var groupPhotoBase64 by remember { mutableStateOf("") }
     val selectedContacts = remember { mutableStateListOf<Contact>() }
+    var searchQuery by remember { mutableStateOf("") }
     var hasError by remember { mutableStateOf(false) }
+
+    val filteredContacts = remember(contacts, searchQuery) {
+        contacts.filter {
+            it.name.contains(searchQuery, ignoreCase = true) ||
+            it.phone.contains(searchQuery)
+        }
+    }
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+        onResult = { uri ->
+            if (uri != null) {
+                try {
+                    val inputStream = context.contentResolver.openInputStream(uri)
+                    val bytes = inputStream?.readBytes()
+                    if (bytes != null) {
+                        groupPhotoBase64 = android.util.Base64.encodeToString(bytes, android.util.Base64.DEFAULT)
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+    )
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(txt("নতুন গ্রুপ চ্যাট খুলুন", "Create New Group Chat"), fontWeight = FontWeight.Bold, color = WhatsAppTealVal) },
+        title = {
+            Column {
+                Text(
+                    text = if (step == 1) txt("নতুন গ্রুপ: সদস্য নির্বাচন", "New Group: Select Members") else txt("নতুন গ্রুপ: বিবরণ লিখুন", "New Group: Enter Details"),
+                    fontWeight = FontWeight.Bold,
+                    color = WhatsAppTealVal,
+                    fontSize = 18.sp
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                // Beautiful visual step indicator
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Box(modifier = Modifier.weight(1f).height(4.dp).background(WhatsAppTealVal, shape = RoundedCornerShape(2.dp)))
+                    Box(modifier = Modifier.weight(1f).height(4.dp).background(if (step >= 2) WhatsAppTealVal else Color.LightGray.copy(alpha = 0.3f), shape = RoundedCornerShape(2.dp)))
+                }
+            }
+        },
         text = {
             Column(modifier = Modifier.fillMaxWidth()) {
-                OutlinedTextField(
-                    value = groupName,
-                    onValueChange = {
-                        groupName = it
-                        hasError = false
-                    },
-                    label = { Text(txt("গ্রুপের নাম", "Group Name")) },
-                    placeholder = { Text(txt("যেমন: বন্ধুদের আড্ডা", "e.g., Friends Corner")) },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedLabelColor = WhatsAppTealVal
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
+                if (step == 1) {
+                    // Search box
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        placeholder = { Text(txt("সদস্য খুঁজুন...", "Search contacts..."), fontSize = 13.sp) },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedLabelColor = WhatsAppTealVal
+                        ),
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                    )
 
-                if (hasError) {
-                    Text(txt("গ্রুপের নাম অবশ্যই দিতে হবে!", "Group name is required!"), color = Color.Red, fontSize = 11.sp)
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(txt("সদস্য যুক্ত করুন (পছন্দ করুন):", "Select members to add:"), fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.Gray)
-                Spacer(modifier = Modifier.height(8.dp))
-
-                LazyColumn(modifier = Modifier.height(180.dp)) {
-                    items(contacts) { contact ->
-                        val isChecked = selectedContacts.contains(contact)
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    if (isChecked) selectedContacts.remove(contact)
-                                    else selectedContacts.add(contact)
-                                }
-                                .padding(vertical = 4.dp)
+                    // Selected contacts chips list
+                    if (selectedContacts.isNotEmpty()) {
+                        Text(
+                            text = "${txt("নির্বাচিত সদস্য", "Selected Members")} (${selectedContacts.size})",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.Gray,
+                            modifier = Modifier.padding(vertical = 4.dp)
+                        )
+                        androidx.compose.foundation.lazy.LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
                         ) {
-                            Checkbox(
-                                checked = isChecked,
-                                onCheckedChange = {
-                                    if (it == true) selectedContacts.add(contact)
-                                    else selectedContacts.remove(contact)
+                            items(selectedContacts) { contact ->
+                                Surface(
+                                    shape = RoundedCornerShape(16.dp),
+                                    color = WhatsAppTealVal.copy(alpha = 0.2f),
+                                    border = BorderStroke(1.dp, WhatsAppTealVal),
+                                    modifier = Modifier.clickable { selectedContacts.remove(contact) }
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                    ) {
+                                        AvatarView(name = contact.name, base64 = contact.profilePicUri, size = 18)
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(contact.name, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Icon(Icons.Default.Close, contentDescription = "Remove", tint = Color.LightGray, modifier = Modifier.size(12.dp))
+                                    }
                                 }
-                            )
-                            AvatarView(name = contact.name, base64 = contact.profilePicUri, size = 32)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(contact.name, color = Color.White, fontSize = 14.sp)
+                            }
                         }
+                    }
+
+                    // Contact List
+                    Text(
+                        text = txt("সকল পরিচিতি", "All Contacts"),
+                        fontSize = 11.sp,
+                        color = Color.Gray,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                    LazyColumn(modifier = Modifier.height(200.dp)) {
+                        items(filteredContacts) { contact ->
+                            val isChecked = selectedContacts.contains(contact)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        if (isChecked) selectedContacts.remove(contact)
+                                        else selectedContacts.add(contact)
+                                    }
+                                    .padding(vertical = 6.dp)
+                            ) {
+                                Checkbox(
+                                    checked = isChecked,
+                                    onCheckedChange = {
+                                        if (it == true) selectedContacts.add(contact)
+                                        else selectedContacts.remove(contact)
+                                    },
+                                    colors = androidx.compose.material3.CheckboxDefaults.colors(checkedColor = WhatsAppGreenVal)
+                                )
+                                AvatarView(name = contact.name, base64 = contact.profilePicUri, size = 36)
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text(contact.name, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                                    Text(contact.phone, color = Color.Gray, fontSize = 11.sp)
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // Step 2: Group Details Entry
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        // Group Photo Picker Button
+                        Box(
+                            modifier = Modifier
+                                .size(84.dp)
+                                .clickable {
+                                    photoPickerLauncher.launch(
+                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                    )
+                                },
+                            contentAlignment = Alignment.BottomEnd
+                        ) {
+                            if (groupPhotoBase64.isNotEmpty()) {
+                                AvatarView(name = groupName, base64 = groupPhotoBase64, size = 80)
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .size(80.dp)
+                                        .background(Color.White.copy(alpha = 0.1f), shape = CircleShape)
+                                        .border(2.dp, WhatsAppTealVal, CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Default.Groups, contentDescription = null, tint = WhatsAppTealVal, modifier = Modifier.size(42.dp))
+                                }
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .size(26.dp)
+                                    .background(WhatsAppGreenVal, shape = CircleShape)
+                                    .border(1.5.dp, Color.Black, CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.PhotoCamera, contentDescription = "Add Photo", tint = Color.White, modifier = Modifier.size(14.dp))
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // Group Name Textfield
+                        OutlinedTextField(
+                            value = groupName,
+                            onValueChange = {
+                                groupName = it
+                                hasError = false
+                            },
+                            label = { Text(txt("গ্রুপের নাম", "Group Name")) },
+                            placeholder = { Text(txt("যেমন: বন্ধুদের আড্ডা", "e.g., Friends Corner")) },
+                            singleLine = true,
+                            isError = hasError,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedLabelColor = WhatsAppTealVal
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        if (hasError) {
+                            Text(txt("গ্রুপের নাম অবশ্যই দিতে হবে!", "Group name is required!"), color = Color.Red, fontSize = 11.sp, modifier = Modifier.align(Alignment.Start))
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Group Description (Optional)
+                        OutlinedTextField(
+                            value = groupDescription,
+                            onValueChange = { groupDescription = it },
+                            label = { Text(txt("গ্রুপের বর্ণনা (ঐচ্ছিক)", "Group Description (Optional)")) },
+                            placeholder = { Text(txt("গ্রুপের উদ্দেশ্য সম্পর্কে কিছু লিখুন...", "Write something about the group...")) },
+                            minLines = 2,
+                            maxLines = 3,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedLabelColor = WhatsAppTealVal
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
                     }
                 }
             }
         },
         confirmButton = {
-            Button(
-                onClick = {
-                    if (groupName.trim().isEmpty()) {
-                        hasError = true
-                    } else {
-                        onConfirm(groupName, selectedContacts.toList())
-                    }
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = WhatsAppGreenVal)
-            ) {
-                Text(txt("তৈরি করুন", "Create"), color = Color.White)
+            if (step == 1) {
+                Button(
+                    onClick = { step = 2 },
+                    enabled = selectedContacts.isNotEmpty(),
+                    colors = ButtonDefaults.buttonColors(containerColor = WhatsAppTealVal)
+                ) {
+                    Text(txt("পরবর্তী", "Next"), color = Color.White)
+                }
+            } else {
+                Button(
+                    onClick = {
+                        if (groupName.trim().isEmpty()) {
+                            hasError = true
+                        } else {
+                            onConfirm(groupName, selectedContacts.toList(), groupPhotoBase64, groupDescription)
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = WhatsAppGreenVal)
+                ) {
+                    Text(txt("তৈরি করুন", "Create"), color = Color.White)
+                }
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(txt("বাতিল", "Cancel"), color = Color.Gray)
+            if (step == 2) {
+                TextButton(onClick = { step = 1 }) {
+                    Text(txt("পিছনে", "Back"), color = Color.Gray)
+                }
+            } else {
+                TextButton(onClick = onDismiss) {
+                    Text(txt("বাতিল", "Cancel"), color = Color.Gray)
+                }
             }
         }
     )
@@ -4663,6 +4881,12 @@ fun ChatWindowScreen(
     val focusManager = LocalFocusManager.current
     var showGroupManageDialog by remember { mutableStateOf(false) }
     val dialogContext = LocalContext.current
+    var chatWallpaper by remember(contact.phone) {
+        mutableStateOf(
+            dialogContext.getSharedPreferences("BartaChatPrefs", Context.MODE_PRIVATE)
+                .getString("chat_wallpaper_${contact.phone}", "default") ?: "default"
+        )
+    }
 
     // Attachment States
     var showAttachOptions by remember { mutableStateOf(false) }
@@ -4924,10 +5148,20 @@ fun ChatWindowScreen(
         }
     }
 
+    val wallpaperColor = when (chatWallpaper) {
+        "teal" -> Color(0xFF005C53)
+        "dark" -> Color(0xFF121212)
+        "purple" -> Color(0xFF3F0C52)
+        "blue" -> Color(0xFF0C245C)
+        "green" -> Color(0xFF094A17)
+        "amber" -> Color(0xFF4A3409)
+        else -> if (isDarkTheme) PremiumBackgroundDark else WhatsAppGrayBackgroundVal
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(if (isDarkTheme) PremiumBackgroundDark else WhatsAppGrayBackgroundVal)
+            .background(wallpaperColor)
     ) {
         // Chat Header with details
         TopAppBar(
@@ -4941,15 +5175,24 @@ fun ChatWindowScreen(
                 }
             },
             title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.clickable(enabled = contact.isGroup) {
+                        showGroupManageDialog = true
+                    }
+                ) {
                     if (contact.isGroup) {
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .background(Color.White.copy(alpha = 0.2f), shape = CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Default.Groups, contentDescription = null, tint = Color.White)
+                        if (contact.profilePicUri.isNotEmpty()) {
+                            AvatarView(name = contact.name, base64 = contact.profilePicUri, size = 36)
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .background(Color.White.copy(alpha = 0.2f), shape = CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.Groups, contentDescription = null, tint = Color.White)
+                            }
                         }
                     } else {
                         AvatarView(name = contact.name, base64 = contact.profilePicUri, size = 36)
@@ -5012,8 +5255,112 @@ fun ChatWindowScreen(
             ManageGroupDialog(
                 contact = contact,
                 viewModel = viewModel,
-                onDismiss = { showGroupManageDialog = false }
+                onDismiss = { 
+                    showGroupManageDialog = false
+                    chatWallpaper = dialogContext.getSharedPreferences("BartaChatPrefs", Context.MODE_PRIVATE)
+                        .getString("chat_wallpaper_${contact.phone}", "default") ?: "default"
+                }
             )
+        }
+
+        val sharedPrefs = remember(contact.phone) {
+            dialogContext.getSharedPreferences("BartaChatPrefs", Context.MODE_PRIVATE)
+        }
+
+        val groupOwner = remember(contact.phone, messageList) {
+            sharedPrefs.getString("group_owner_${contact.phone}", "") ?: ""
+        }
+        val groupAdminsStr = remember(contact.phone, messageList) {
+            sharedPrefs.getString("group_admins_${contact.phone}", "") ?: ""
+        }
+        val adminsCanPinMessages = remember(contact.phone, messageList) {
+            sharedPrefs.getBoolean("group_admins_can_pin_messages_${contact.phone}", true)
+        }
+        
+        val isMeOwner = groupOwner == myNumber
+        val isMeAdmin = groupAdminsStr.split(",").contains(myNumber)
+        val canMePinMessage = isMeOwner || (isMeAdmin && adminsCanPinMessages)
+
+        // Pinned Message Banner
+        val pinnedMessageId = remember(contact.phone, messageList) {
+            sharedPrefs.getString("pinned_message_id_${contact.phone}", "") ?: ""
+        }
+        val pinnedMessage = remember(pinnedMessageId, messageList) {
+            if (pinnedMessageId.isNotEmpty()) {
+                messageList.find { it.id == pinnedMessageId }
+            } else {
+                null
+            }
+        }
+
+        if (pinnedMessage != null) {
+            val scope = rememberCoroutineScope()
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF1E293B))
+                    .border(BorderStroke(0.5.dp, WhatsAppTealVal.copy(alpha = 0.5f)))
+                    .clickable {
+                        val index = messageList.indexOfFirst { it.id == pinnedMessage.id }
+                        if (index >= 0) {
+                            scope.launch {
+                                listState.animateScrollToItem(index)
+                            }
+                        }
+                    }
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PushPin,
+                        contentDescription = "Pinned Message",
+                        tint = WhatsAppGreenVal,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            text = if (appLanguage == "bn") "পিন করা বার্তা" else "Pinned Message",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = WhatsAppTealVal
+                        )
+                        val previewText = if (pinnedMessage.isDeletedForEveryone) {
+                            if (appLanguage == "bn") "ঐ বার্তাটি মুছে ফেলা হয়েছে" else "This message was deleted"
+                        } else {
+                            pinnedMessage.text.ifEmpty { "[Media]" }
+                        }
+                        Text(
+                            text = previewText,
+                            fontSize = 13.sp,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                
+                if (isMeOwner || isMeAdmin) {
+                    IconButton(
+                        onClick = {
+                            viewModel.unpinMessage(contact.phone)
+                        },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Unpin Message",
+                            tint = Color.LightGray,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            }
         }
 
         // Messages Box
@@ -5039,7 +5386,10 @@ fun ChatWindowScreen(
                     onImageClick = { selectedImageForPreview = it },
                     onVideoClick = { selectedVideoForPlayback = it },
                     onForward = { messageToForward = it },
-                    onRegenerate = if (contact.phone == "01300000000") { { viewModel.regenerateLastAIResponse() } } else null
+                    onRegenerate = if (contact.phone == "01300000000") { { viewModel.regenerateLastAIResponse() } } else null,
+                    isAdminOrOwner = isMeOwner || isMeAdmin,
+                    canMePinMessage = canMePinMessage,
+                    onPinMessage = { viewModel.pinMessage(contact.phone, msg.id) }
                 )
             }
             if (contact.typingStatus.isNotEmpty()) {
@@ -5561,7 +5911,10 @@ fun ChatMsgBubble(
     onImageClick: (String) -> Unit,
     onVideoClick: (String) -> Unit,
     onForward: (Message) -> Unit,
-    onRegenerate: (() -> Unit)? = null
+    onRegenerate: (() -> Unit)? = null,
+    isAdminOrOwner: Boolean = false,
+    canMePinMessage: Boolean = false,
+    onPinMessage: (() -> Unit)? = null
 ) {
     val layoutAlign = if (isMe) Alignment.CenterEnd else Alignment.CenterStart
     val bubbleColor = if (isMe) {
@@ -5645,8 +5998,14 @@ fun ChatMsgBubble(
 
                 // Inner content rendering branch checking Deletion/Images/Video/Text
                 if (message.isDeletedForEveryone) {
+                    val deletionText = if (message.text.startsWith("Deleted by:")) {
+                        val deleter = message.text.removePrefix("Deleted by:").trim()
+                        if (isBengali) "🚫 এই বার্তাটি মুছে ফেলা হয়েছে ($deleter দ্বারা)" else "🚫 This message was deleted (by $deleter)"
+                    } else {
+                        if (isBengali) "🚫 এই বার্তাটি মুছে ফেলা হয়েছে" else "🚫 This message was deleted"
+                    }
                     Text(
-                        text = "🚫 এই বার্তাটি মুছে ফেলা হয়েছে",
+                        text = deletionText,
                         fontSize = 14.sp,
                         color = Color.LightGray,
                         modifier = Modifier.padding(vertical = 4.dp)
@@ -5806,17 +6165,22 @@ fun ChatMsgBubble(
                         Text(txt("আমার থেকে মুছুন", "Delete for Me"), color = Color.White)
                     }
 
-                    // Option 2: Delete For Everyone (Only sender has full permission constraints)
-                    if (isMe && !message.isDeletedForEveryone) {
+                    // Option 2: Delete For Everyone (Only sender has full permission constraints, or Admins/Owners for moderation)
+                    if ((isMe || isAdminOrOwner) && !message.isDeletedForEveryone) {
                         Button(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().testTag("delete_for_everyone_button"),
                             onClick = {
                                 onDeleteForEveryone()
                                 showDeleteConfirmationDialog = false
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
                         ) {
-                            Text(txt("সবার জন্য মুছুন", "Delete for Everyone"), color = Color.White)
+                            val label = if (isMe) {
+                                txt("সবার জন্য মুছুন", "Delete for Everyone")
+                            } else {
+                                txt("বার্তা মডারেট করুন (সবার জন্য মুছুন) ⚠️", "Moderate Message (Delete for Everyone) ⚠️")
+                            }
+                            Text(label, color = Color.White)
                         }
                     }
 
@@ -5831,6 +6195,20 @@ fun ChatMsgBubble(
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E88E5))
                         ) {
                             Text(txt("বার্তা সংশোধন করুন", "Edit Message"), color = Color.White)
+                        }
+                    }
+
+                    // Option 3.5: Pin Message (Admins/Owners with permission, in group chats)
+                    if (isGroupMsg && !message.isDeletedForEveryone && canMePinMessage && onPinMessage != null) {
+                        Button(
+                            modifier = Modifier.fillMaxWidth().testTag("pin_message_button"),
+                            onClick = {
+                                onPinMessage()
+                                showDeleteConfirmationDialog = false
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B))
+                        ) {
+                            Text(txt("বার্তা পিন করুন 📌", "Pin Message 📌"), color = Color.White)
                         }
                     }
 
@@ -6048,11 +6426,23 @@ fun ManageGroupDialog(
 ) {
     val context = LocalContext.current
     val allContacts by viewModel.contacts.collectAsStateWithLifecycle()
-    val nonGroupContacts = allContacts.filter { !it.isGroup }
+    val nonGroupContacts = allContacts.filter { !it.isGroup && it.phone != "01300000000" }
     
     val myNumberState by viewModel.myNumber.collectAsStateWithLifecycle()
     val myNumber = myNumberState ?: ""
+    val activeMessages by viewModel.activeMessages.collectAsStateWithLifecycle()
+    
+    val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
+    val isBn = appLanguage == "bn"
+    fun txt(bn: String, en: String) = if (isBn) bn else en
+
     var groupName by remember { mutableStateOf(contact.name) }
+    var groupDescription by remember {
+        mutableStateOf(
+            context.getSharedPreferences("BartaChatPrefs", Context.MODE_PRIVATE)
+                .getString("group_description_${contact.phone}", "") ?: ""
+        )
+    }
     
     val selectedParticipantPhones = remember {
         mutableStateListOf<String>().apply {
@@ -6060,112 +6450,859 @@ fun ManageGroupDialog(
         }
     }
     
-    val groupCreator = remember(contact.phone, contact.groupParticipants) {
-        context.getSharedPreferences("BartaChatPrefs", Context.MODE_PRIVATE)
-            .getString("group_creator_${contact.phone}", "")?.ifEmpty {
-                contact.groupParticipants.split(",").firstOrNull() ?: ""
-            } ?: (contact.groupParticipants.split(",").firstOrNull() ?: "")
-    }
-    val isGroupAdmin = groupCreator.isEmpty() || groupCreator == myNumber
+    val sharedPrefs = remember { context.getSharedPreferences("BartaChatPrefs", Context.MODE_PRIVATE) }
     
+    var groupOwner by remember(contact.phone) {
+        mutableStateOf(
+            sharedPrefs.getString("group_owner_${contact.phone}", "")?.ifEmpty {
+                sharedPrefs.getString("group_creator_${contact.phone}", "")?.ifEmpty {
+                    contact.groupParticipants.split(",").firstOrNull() ?: ""
+                } ?: ""
+            } ?: ""
+        )
+    }
+
+    var groupAdminsStr by remember(contact.phone) {
+        mutableStateOf(sharedPrefs.getString("group_admins_${contact.phone}", "") ?: "")
+    }
+
+    var adminsCanEditInfo by remember(contact.phone) {
+        mutableStateOf(sharedPrefs.getBoolean("group_admins_can_edit_info_${contact.phone}", true))
+    }
+
+    var adminsCanPinMessages by remember(contact.phone) {
+        mutableStateOf(sharedPrefs.getBoolean("group_admins_can_pin_messages_${contact.phone}", true))
+    }
+
+    var membersCanEditInfo by remember(contact.phone) {
+        mutableStateOf(sharedPrefs.getBoolean("group_members_can_edit_info_${contact.phone}", false))
+    }
+
+    val isMeOwner = groupOwner == myNumber
+    val isMeAdmin = groupAdminsStr.split(",").contains(myNumber)
+    
+    // Check if current user has permission to edit group info
+    val canIEditGroupInfo = isMeOwner || (isMeAdmin && adminsCanEditInfo) || membersCanEditInfo
+    val canIAddMembers = isMeOwner || isMeAdmin
+    
+    var activeMainTab by remember { mutableStateOf(1) } // 1: Info/Members, 2: Shared Content, 3: Group Settings
+    var activeSharedSubTab by remember { mutableStateOf(1) } // 1: Media, 2: Files, 3: Links
+
+    // Wallpaper and Mute States
+    var isMuted by remember { mutableStateOf(sharedPrefs.getBoolean("mute_notifications_${contact.phone}", false)) }
+    var currentWallpaper by remember { mutableStateOf(sharedPrefs.getString("chat_wallpaper_${contact.phone}", "default") ?: "default") }
+
+    var groupPhotoBase64 by remember { mutableStateOf(contact.profilePicUri) }
+    var showAddMemberDialog by remember { mutableStateOf(false) }
     var hasError by remember { mutableStateOf(false) }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = if (isGroupAdmin) "গ্রুপ সেটিংস ও সদস্য পরিবর্তন" else "গ্রুপের বিবরণ ও সদস্যবৃন্দ", 
-                fontWeight = FontWeight.Bold, 
-                color = WhatsAppTealVal
-            )
-        },
-        text = {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                OutlinedTextField(
-                    value = groupName,
-                    onValueChange = {
-                        if (isGroupAdmin) {
-                            groupName = it
-                            hasError = false
-                        }
-                    },
-                    label = { Text("গ্রুপের নাম") },
-                    singleLine = true,
-                    enabled = isGroupAdmin,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedLabelColor = WhatsAppTealVal,
-                        unfocusedLabelColor = Color.Gray,
-                        disabledTextColor = Color.White,
-                        disabledLabelColor = Color.LightGray
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
+    // Confirmation Dialog States
+    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+    var pendingRemovePhone by remember { mutableStateOf<String?>(null) }
+    var pendingTransferPhone by remember { mutableStateOf<String?>(null) }
 
-                if (hasError) {
-                    Text("গ্রুপের নাম অবশ্যই দিতে হবে!", color = Color.Red, fontSize = 11.sp)
+    // Media & Link Extraction
+    val sharedMedia = remember(activeMessages) {
+        activeMessages.filter { it.mediaUrl != null && (it.mediaType == "image" || it.mediaType == "video") }
+    }
+    val sharedFiles = remember(activeMessages) {
+        activeMessages.filter { it.mediaUrl != null && it.mediaType != "image" && it.mediaType != "video" }
+    }
+    val sharedLinks = remember(activeMessages) {
+        activeMessages.filter { it.text.contains("http://", ignoreCase = true) || it.text.contains("https://", ignoreCase = true) }
+    }
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+        onResult = { uri ->
+            if (uri != null) {
+                try {
+                    val inputStream = context.contentResolver.openInputStream(uri)
+                    val bytes = inputStream?.readBytes()
+                    if (bytes != null) {
+                        val base64 = android.util.Base64.encodeToString(bytes, android.util.Base64.DEFAULT)
+                        groupPhotoBase64 = base64
+                        viewModel.updateGroup(
+                            groupId = contact.phone,
+                            newName = groupName,
+                            newParticipants = selectedParticipantPhones.toList(),
+                            newPhoto = base64,
+                            newDescription = groupDescription
+                        )
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+    )
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnBackPress = true,
+            dismissOnClickOutside = false
+        )
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = Color(0xFF0B141A)
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                // Header / Top App Bar
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(WhatsAppTealVal)
+                        .padding(horizontal = 4.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = txt("পিছনে", "Back"),
+                            tint = Color.White
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = txt("গ্রুপের তথ্য ও সেটিংস", "Group Info & Settings"),
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            fontSize = 18.sp
+                        )
+                        Text(
+                            text = groupName,
+                            color = Color.White.copy(alpha = 0.7f),
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                Text(
-                    text = "সদস্যদের তালিকা (${selectedParticipantPhones.size} জন):",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp,
-                    color = Color.Gray
-                )
-                
-                Spacer(modifier = Modifier.height(8.dp))
+                // Scrollable Content
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                        .padding(16.dp)
+                ) {
+                    // Navigation Tabs
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        listOf(
+                            Triple(1, txt("সদস্যবৃন্দ", "Members"), Icons.Default.People),
+                            Triple(2, txt("মিডিয়া ও লিংক", "Shared"), Icons.Default.Folder),
+                            Triple(3, txt("সেটিংস", "Settings"), Icons.Default.Settings)
+                        ).forEach { (tabId, tabName, icon) ->
+                            val isSelected = activeMainTab == tabId
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier
+                                    .clickable { activeMainTab = tabId }
+                                    .padding(vertical = 4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = icon,
+                                    contentDescription = tabName,
+                                    tint = if (isSelected) WhatsAppTealVal else Color.Gray,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = tabName,
+                                    color = if (isSelected) Color.White else Color.Gray,
+                                    fontSize = 12.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .width(42.dp)
+                                        .height(2.dp)
+                                        .background(if (isSelected) WhatsAppTealVal else Color.Transparent)
+                                )
+                            }
+                        }
+                    }
 
-                LazyColumn(modifier = Modifier.height(200.dp)) {
-                    items(nonGroupContacts) { c ->
-                        val isChecked = selectedParticipantPhones.contains(c.phone)
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable(enabled = isGroupAdmin) {
-                                    if (isChecked) {
-                                        if (c.phone != myNumber) {
-                                            selectedParticipantPhones.remove(c.phone)
-                                        }
-                                    } else {
-                                        selectedParticipantPhones.add(c.phone)
+                    HorizontalDivider(color = Color.Gray.copy(alpha = 0.2f), modifier = Modifier.padding(bottom = 16.dp))
+
+                    when (activeMainTab) {
+                    1 -> {
+                        // TAB 1: MEMBERS & INFO
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            // Large Group Avatar
+                            Box(
+                                modifier = Modifier
+                                    .size(92.dp)
+                                    .clickable(enabled = canIEditGroupInfo) {
+                                        photoPickerLauncher.launch(
+                                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                        )
+                                    },
+                                contentAlignment = Alignment.BottomEnd
+                            ) {
+                                if (groupPhotoBase64.isNotEmpty()) {
+                                    AvatarView(name = groupName, base64 = groupPhotoBase64, size = 88)
+                                } else {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(88.dp)
+                                            .background(Color.White.copy(alpha = 0.1f), shape = CircleShape)
+                                            .border(2.dp, WhatsAppTealVal, CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(Icons.Default.Groups, contentDescription = null, tint = WhatsAppTealVal, modifier = Modifier.size(46.dp))
                                     }
                                 }
-                                .padding(vertical = 4.dp)
-                        ) {
-                            Checkbox(
-                                checked = isChecked,
-                                onCheckedChange = { checked ->
-                                    if (isGroupAdmin) {
-                                        if (checked == true) {
-                                            selectedParticipantPhones.add(c.phone)
-                                        } else {
-                                            if (c.phone != myNumber) {
-                                                selectedParticipantPhones.remove(c.phone)
+                                if (canIEditGroupInfo) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(26.dp)
+                                            .background(WhatsAppGreenVal, shape = CircleShape)
+                                            .border(1.5.dp, Color.Black, CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(Icons.Default.PhotoCamera, contentDescription = "Edit Photo", tint = Color.White, modifier = Modifier.size(14.dp))
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(groupName, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            if (groupDescription.isNotEmpty()) {
+                                Text(
+                                    groupDescription,
+                                    fontSize = 13.sp,
+                                    color = Color.LightGray,
+                                    modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+                            } else {
+                                Text(
+                                    txt("কোনো বিবরণ যোগ করা হয়নি।", "No description added yet."),
+                                    fontSize = 12.sp,
+                                    color = Color.Gray,
+                                    modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
+                                )
+                            }
+
+                            // Dynamic Actions Row (Mute, Wallpaper Selector)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Color.White.copy(alpha = 0.05f), shape = RoundedCornerShape(12.dp))
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = if (isMuted) Icons.Default.NotificationsOff else Icons.Default.NotificationsActive,
+                                        contentDescription = "Mute",
+                                        tint = if (isMuted) Color.LightGray else WhatsAppTealVal,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(txt("মিউট নোটিফিকেশন", "Mute Notifications"), fontSize = 13.sp, color = Color.White)
+                                }
+                                Switch(
+                                    checked = isMuted,
+                                    onCheckedChange = {
+                                        isMuted = it
+                                        sharedPrefs.edit().putBoolean("mute_notifications_${contact.phone}", it).apply()
+                                    },
+                                    colors = androidx.compose.material3.SwitchDefaults.colors(checkedThumbColor = WhatsAppGreenVal)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            // Custom Wallpaper Selector Row
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Color.White.copy(alpha = 0.05f), shape = RoundedCornerShape(12.dp))
+                                    .padding(12.dp)
+                            ) {
+                                Text(txt("চ্যাট ওয়ালপেপার থিম:", "Chat Wallpaper Theme:"), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = WhatsAppTealVal)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                androidx.compose.foundation.lazy.LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    val wallpaperThemes = listOf(
+                                        Pair("default", Color.DarkGray),
+                                        Pair("teal", Color(0xFF005C53)),
+                                        Pair("dark", Color(0xFF121212)),
+                                        Pair("purple", Color(0xFF3F0C52)),
+                                        Pair("blue", Color(0xFF0C245C)),
+                                        Pair("green", Color(0xFF094A17)),
+                                        Pair("amber", Color(0xFF4A3409))
+                                    )
+                                    items(wallpaperThemes) { (themeName, color) ->
+                                        val isCurrent = currentWallpaper == themeName
+                                        Box(
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .background(color, shape = CircleShape)
+                                                .border(if (isCurrent) 2.5.dp else 1.dp, if (isCurrent) WhatsAppGreenVal else Color.Transparent, CircleShape)
+                                                .clickable {
+                                                    currentWallpaper = themeName
+                                                    sharedPrefs.edit().putString("chat_wallpaper_${contact.phone}", themeName).apply()
+                                                },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (isCurrent) {
+                                                Icon(Icons.Default.Check, contentDescription = "Active", tint = Color.White, modifier = Modifier.size(16.dp))
                                             }
                                         }
                                     }
-                                },
-                                enabled = isGroupAdmin && c.phone != myNumber
-                            )
-                            AvatarView(name = c.name, base64 = c.profilePicUri, size = 32)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column {
-                                Text(c.name, color = Color.White, fontSize = 14.sp)
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    val isUserMe = c.phone == myNumber
-                                    val isUserCreator = c.phone == groupCreator
-                                    if (isUserMe && isUserCreator) {
-                                        Text("আপনি (গ্রুপ এডমিন 👑)", color = WhatsAppGreenVal, fontSize = 11.sp)
-                                    } else if (isUserCreator) {
-                                        Text("গ্রুপ এডমিন 👑", color = WhatsAppTealVal, fontSize = 11.sp)
-                                    } else if (isUserMe) {
-                                        Text("আপনি", color = Color.Gray, fontSize = 11.sp)
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            // Member List Title
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = txt("গ্রুপ সদস্যসমূহ (${selectedParticipantPhones.size} জন):", "Group Members (${selectedParticipantPhones.size}):"),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = Color.Gray
+                                )
+                                if (canIAddMembers) {
+                                    TextButton(onClick = { showAddMemberDialog = true }) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp), tint = WhatsAppGreenVal)
+                                            Spacer(modifier = Modifier.width(2.dp))
+                                            Text(txt("সদস্য যোগ করুন", "Add Member"), color = WhatsAppGreenVal, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            // Sort: Owner first, then Admins, then regular members
+                            val sortedParticipantPhones = remember(selectedParticipantPhones.toList(), groupOwner, groupAdminsStr) {
+                                selectedParticipantPhones.toList().sortedWith { p1, p2 ->
+                                    when {
+                                        p1 == groupOwner -> -1
+                                        p2 == groupOwner -> 1
+                                        groupAdminsStr.split(",").contains(p1) && !groupAdminsStr.split(",").contains(p2) -> -1
+                                        !groupAdminsStr.split(",").contains(p1) && groupAdminsStr.split(",").contains(p2) -> 1
+                                        else -> p1.compareTo(p2)
+                                    }
+                                }
+                            }
+
+                            // Render Member List Items
+                            sortedParticipantPhones.forEach { participantPhone ->
+                                val memberContact = allContacts.find { it.phone == participantPhone }
+                                val memberName = memberContact?.name ?: participantPhone
+                                val isMemberMe = participantPhone == myNumber
+
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp)
+                                        .background(Color.White.copy(alpha = 0.03f), RoundedCornerShape(8.dp))
+                                        .padding(8.dp)
+                                ) {
+                                    AvatarView(name = memberName, base64 = memberContact?.profilePicUri ?: "", size = 32)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(memberName, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                            modifier = Modifier.padding(top = 2.dp)
+                                        ) {
+                                            when {
+                                                participantPhone == groupOwner -> {
+                                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                        Surface(
+                                                            color = Color(0xFFEAB308).copy(alpha = 0.15f),
+                                                            border = BorderStroke(1.dp, Color(0xFFEAB308)),
+                                                            shape = RoundedCornerShape(4.dp)
+                                                        ) {
+                                                            Text(
+                                                                text = txt("ওনার", "Owner"),
+                                                                color = Color(0xFFFACC15),
+                                                                fontSize = 10.sp,
+                                                                fontWeight = FontWeight.Bold,
+                                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                            )
+                                                        }
+                                                        Surface(
+                                                            color = WhatsAppTealVal.copy(alpha = 0.15f),
+                                                            border = BorderStroke(1.dp, WhatsAppTealVal),
+                                                            shape = RoundedCornerShape(4.dp)
+                                                        ) {
+                                                            Text(
+                                                                text = txt("এডমিন", "Admin"),
+                                                                color = WhatsAppTealVal,
+                                                                fontSize = 10.sp,
+                                                                fontWeight = FontWeight.Bold,
+                                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                                groupAdminsStr.split(",").contains(participantPhone) -> {
+                                                    Surface(
+                                                        color = WhatsAppTealVal.copy(alpha = 0.15f),
+                                                        border = BorderStroke(1.dp, WhatsAppTealVal),
+                                                        shape = RoundedCornerShape(4.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = txt("এডমিন", "Admin"),
+                                                            color = WhatsAppTealVal,
+                                                            fontSize = 10.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                        )
+                                                    }
+                                                }
+                                                else -> {
+                                                    Surface(
+                                                        color = Color.Gray.copy(alpha = 0.15f),
+                                                        border = BorderStroke(1.dp, Color.Gray),
+                                                        shape = RoundedCornerShape(4.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = txt("সদস্য", "Member"),
+                                                            color = Color.LightGray,
+                                                            fontSize = 10.sp,
+                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                            
+                                            if (isMemberMe) {
+                                                Text(txt("(আপনি)", "(You)"), color = Color.Gray, fontSize = 10.sp)
+                                            } else {
+                                                Text(participantPhone, color = Color.Gray, fontSize = 10.sp)
+                                            }
+                                        }
+                                    }
+                                    
+                                    // Owner/Admin Context Options for this Member
+                                    val isTargetOwner = participantPhone == groupOwner
+                                    val isTargetAdmin = groupAdminsStr.split(",").contains(participantPhone)
+                                    val canIManageTarget = isMeOwner || (isMeAdmin && !isTargetOwner && !isTargetAdmin)
+
+                                    if (canIManageTarget && !isMemberMe) {
+                                        var showMemberMenu by remember { mutableStateOf(false) }
+                                        Box {
+                                            IconButton(onClick = { showMemberMenu = true }, modifier = Modifier.size(24.dp)) {
+                                                Icon(Icons.Default.MoreVert, contentDescription = "Member Actions", tint = Color.LightGray, modifier = Modifier.size(16.dp))
+                                            }
+                                            DropdownMenu(
+                                                expanded = showMemberMenu,
+                                                onDismissRequest = { showMemberMenu = false }
+                                            ) {
+                                                if (isMeOwner) {
+                                                    if (isTargetAdmin) {
+                                                        DropdownMenuItem(
+                                                            text = { Text(txt("এডমিন পদ থেকে সরান", "Demote Admin"), fontSize = 13.sp) },
+                                                            onClick = {
+                                                                showMemberMenu = false
+                                                                val updatedAdmins = groupAdminsStr.split(",")
+                                                                    .filter { it.isNotEmpty() && it != participantPhone }
+                                                                    .joinToString(",")
+                                                                groupAdminsStr = updatedAdmins
+                                                                sharedPrefs.edit().putString("group_admins_${contact.phone}", updatedAdmins).apply()
+                                                                viewModel.updateGroup(
+                                                                    groupId = contact.phone,
+                                                                    newName = groupName,
+                                                                    newParticipants = selectedParticipantPhones.toList(),
+                                                                    newPhoto = groupPhotoBase64,
+                                                                    newDescription = groupDescription,
+                                                                    admins = updatedAdmins
+                                                                )
+                                                            }
+                                                        )
+                                                    } else {
+                                                        DropdownMenuItem(
+                                                            text = { Text(txt("এডমিন বানান", "Make Admin"), fontSize = 13.sp) },
+                                                            onClick = {
+                                                                showMemberMenu = false
+                                                                val updatedAdmins = (groupAdminsStr.split(",").filter { it.isNotEmpty() } + participantPhone).distinct().joinToString(",")
+                                                                groupAdminsStr = updatedAdmins
+                                                                sharedPrefs.edit().putString("group_admins_${contact.phone}", updatedAdmins).apply()
+                                                                viewModel.updateGroup(
+                                                                    groupId = contact.phone,
+                                                                    newName = groupName,
+                                                                    newParticipants = selectedParticipantPhones.toList(),
+                                                                    newPhoto = groupPhotoBase64,
+                                                                    newDescription = groupDescription,
+                                                                    admins = updatedAdmins
+                                                                )
+                                                            }
+                                                        )
+                                                    }
+                                                    
+                                                    DropdownMenuItem(
+                                                        text = { Text(txt("মালিকানা হস্তান্তর করুন", "Transfer Ownership"), fontSize = 13.sp, color = WhatsAppGreenVal) },
+                                                        onClick = {
+                                                            showMemberMenu = false
+                                                            pendingTransferPhone = participantPhone
+                                                        }
+                                                    )
+                                                }
+                                                
+                                                DropdownMenuItem(
+                                                    text = { Text(txt("গ্রুপ থেকে সরান", "Remove from Group"), color = Color.Red, fontSize = 13.sp) },
+                                                    onClick = {
+                                                        showMemberMenu = false
+                                                        pendingRemovePhone = participantPhone
+                                                    }
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    2 -> {
+                        // TAB 2: SHARED CONTENT (MEDIA, FILES, LINKS)
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            // Sub Tab bar
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceAround
+                            ) {
+                                listOf(
+                                    Pair(1, txt("মিডিয়া", "Media") + " (${sharedMedia.size})"),
+                                    Pair(2, txt("ফাইল", "Files") + " (${sharedFiles.size})"),
+                                    Pair(3, txt("লিংক", "Links") + " (${sharedLinks.size})")
+                                ).forEach { (subId, label) ->
+                                    val isSelected = activeSharedSubTab == subId
+                                    Button(
+                                        onClick = { activeSharedSubTab = subId },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = if (isSelected) WhatsAppTealVal else Color.White.copy(alpha = 0.05f)
+                                        ),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                        modifier = Modifier.height(28.dp)
+                                    ) {
+                                        Text(label, fontSize = 11.sp, color = if (isSelected) Color.White else Color.Gray)
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            // Sub Tab Content
+                            when (activeSharedSubTab) {
+                                1 -> {
+                                    if (sharedMedia.isEmpty()) {
+                                        Text(txt("কোনো শেয়ারকৃত ফটো বা ভিডিও নেই", "No shared photos or videos found"), color = Color.Gray, fontSize = 12.sp, modifier = Modifier.padding(vertical = 12.dp))
                                     } else {
-                                        Text(c.phone, color = Color.Gray, fontSize = 11.sp)
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            sharedMedia.take(12).forEach { msg ->
+                                                Card(
+                                                    modifier = Modifier
+                                                        .size(72.dp)
+                                                        .clickable { /* Handle preview click if needed */ },
+                                                    shape = RoundedCornerShape(8.dp)
+                                                ) {
+                                                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                                                        val bitmap = remember(msg.mediaUrl) {
+                                                            try {
+                                                                val decodedBytes = android.util.Base64.decode(msg.mediaUrl, android.util.Base64.DEFAULT)
+                                                                android.graphics.BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.size)
+                                                            } catch (e: Exception) {
+                                                                null
+                                                            }
+                                                        }
+                                                        if (bitmap != null) {
+                                                            androidx.compose.foundation.Image(
+                                                                bitmap = bitmap.asImageBitmap(),
+                                                                contentDescription = "Shared Image",
+                                                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                                                modifier = Modifier.fillMaxSize()
+                                                            )
+                                                        } else {
+                                                            Icon(Icons.Default.Image, contentDescription = null, tint = Color.Gray)
+                                                        }
+                                                        if (msg.mediaType == "video") {
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .size(24.dp)
+                                                                    .background(Color.Black.copy(alpha = 0.6f), CircleShape),
+                                                                contentAlignment = Alignment.Center
+                                                            ) {
+                                                                Icon(Icons.Default.PlayArrow, contentDescription = "Play", tint = Color.White, modifier = Modifier.size(14.dp))
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                2 -> {
+                                    if (sharedFiles.isEmpty()) {
+                                        Text(txt("কোনো শেয়ারকৃত ফাইল পাওয়া যায়নি", "No shared files found"), color = Color.Gray, fontSize = 12.sp, modifier = Modifier.padding(vertical = 12.dp))
+                                    } else {
+                                        sharedFiles.forEach { msg ->
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(vertical = 4.dp)
+                                                    .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(6.dp))
+                                                    .padding(8.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Icon(Icons.Default.AttachFile, contentDescription = "File", tint = WhatsAppTealVal, modifier = Modifier.size(18.dp))
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(
+                                                    msg.text.ifEmpty { "attachment_file" },
+                                                    color = Color.White,
+                                                    fontSize = 12.sp,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                                3 -> {
+                                    if (sharedLinks.isEmpty()) {
+                                        Text(txt("কোনো লিংক সম্বলিত বার্তা নেই", "No links found in messages"), color = Color.Gray, fontSize = 12.sp, modifier = Modifier.padding(vertical = 12.dp))
+                                    } else {
+                                        sharedLinks.forEach { msg ->
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(vertical = 4.dp)
+                                                    .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(6.dp))
+                                                    .padding(8.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Icon(Icons.Default.Link, contentDescription = "Link", tint = WhatsAppGreenVal, modifier = Modifier.size(18.dp))
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(
+                                                    msg.text,
+                                                    color = Color(0xFF0ea5e9),
+                                                    fontSize = 12.sp,
+                                                    maxLines = 2,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = Modifier.clickable {
+                                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                                        val clip = android.content.ClipData.newPlainText("Barta Link", msg.text)
+                                                        clipboard.setPrimaryClip(clip)
+                                                        Toast.makeText(context, txt("লিংক কপি করা হয়েছে!", "Link copied!"), Toast.LENGTH_SHORT).show()
+                                                    }
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    3 -> {
+                        // TAB 3: SETTINGS (ADMIN AND GROUP GENERAL SETTINGS)
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            if (canIEditGroupInfo) {
+                                Text(txt("গ্রুপের তথ্য পরিবর্তন করুন:", "Modify Group Details:"), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = WhatsAppTealVal)
+                                Spacer(modifier = Modifier.height(10.dp))
+                                
+                                OutlinedTextField(
+                                    value = groupName,
+                                    onValueChange = {
+                                        groupName = it
+                                        hasError = false
+                                        viewModel.updateGroup(
+                                            groupId = contact.phone,
+                                            newName = it,
+                                            newParticipants = selectedParticipantPhones.toList(),
+                                            newPhoto = groupPhotoBase64,
+                                            newDescription = groupDescription
+                                        )
+                                    },
+                                    label = { Text(txt("গ্রুপের নাম", "Group Name")) },
+                                    singleLine = true,
+                                    isError = hasError,
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedTextColor = Color.White,
+                                        unfocusedTextColor = Color.White,
+                                        focusedLabelColor = WhatsAppTealVal
+                                    ),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                if (hasError) {
+                                    Text(txt("গ্রুপের নাম অবশ্যই দিতে হবে!", "Group name is required!"), color = Color.Red, fontSize = 11.sp)
+                                }
+
+                                Spacer(modifier = Modifier.height(12.dp))
+
+                                OutlinedTextField(
+                                    value = groupDescription,
+                                    onValueChange = {
+                                        groupDescription = it
+                                        viewModel.updateGroup(
+                                            groupId = contact.phone,
+                                            newName = groupName,
+                                            newParticipants = selectedParticipantPhones.toList(),
+                                            newPhoto = groupPhotoBase64,
+                                            newDescription = it
+                                        )
+                                    },
+                                    label = { Text(txt("গ্রুপের বর্ণনা", "Group Description")) },
+                                    minLines = 2,
+                                    maxLines = 3,
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedTextColor = Color.White,
+                                        unfocusedTextColor = Color.White,
+                                        focusedLabelColor = WhatsAppTealVal
+                                    ),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Spacer(modifier = Modifier.height(20.dp))
+                            }
+
+                            // Owner-only permission controls
+                            if (isMeOwner) {
+                                Text(txt("গ্রুপের পারমিশন ও সেটিংস (ওনার কন্ট্রোল):", "Permissions & Settings (Owner Control):"), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = WhatsAppTealVal)
+                                Spacer(modifier = Modifier.height(10.dp))
+                                
+                                // Switch 1: Admins can edit info
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(txt("এডমিনরা গ্রুপ তথ্য পরিবর্তন করতে পারবে", "Admins can edit group info"), fontSize = 12.sp, color = Color.White)
+                                    Switch(
+                                        checked = adminsCanEditInfo,
+                                        onCheckedChange = {
+                                            adminsCanEditInfo = it
+                                            sharedPrefs.edit().putBoolean("group_admins_can_edit_info_${contact.phone}", it).apply()
+                                            viewModel.updateGroup(
+                                                groupId = contact.phone,
+                                                newName = groupName,
+                                                newParticipants = selectedParticipantPhones.toList(),
+                                                newPhoto = groupPhotoBase64,
+                                                newDescription = groupDescription,
+                                                adminsCanEditInfo = it
+                                            )
+                                        },
+                                        colors = androidx.compose.material3.SwitchDefaults.colors(checkedThumbColor = WhatsAppGreenVal)
+                                    )
+                                }
+
+                                // Switch 2: Admins can pin messages
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(txt("এডমিনরা বার্তা পিন (Pin) করতে পারবে", "Admins can pin messages"), fontSize = 12.sp, color = Color.White)
+                                    Switch(
+                                        checked = adminsCanPinMessages,
+                                        onCheckedChange = {
+                                            adminsCanPinMessages = it
+                                            sharedPrefs.edit().putBoolean("group_admins_can_pin_messages_${contact.phone}", it).apply()
+                                            viewModel.updateGroup(
+                                                groupId = contact.phone,
+                                                newName = groupName,
+                                                newParticipants = selectedParticipantPhones.toList(),
+                                                newPhoto = groupPhotoBase64,
+                                                newDescription = groupDescription,
+                                                adminsCanPinMessages = it
+                                            )
+                                        },
+                                        colors = androidx.compose.material3.SwitchDefaults.colors(checkedThumbColor = WhatsAppGreenVal)
+                                    )
+                                }
+
+                                // Switch 3: Members can edit info
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(txt("সদস্যরা গ্রুপ তথ্য পরিবর্তন করতে পারবে", "Members can edit group info"), fontSize = 12.sp, color = Color.White)
+                                    Switch(
+                                        checked = membersCanEditInfo,
+                                        onCheckedChange = {
+                                            membersCanEditInfo = it
+                                            sharedPrefs.edit().putBoolean("group_members_can_edit_info_${contact.phone}", it).apply()
+                                            viewModel.updateGroup(
+                                                groupId = contact.phone,
+                                                newName = groupName,
+                                                newParticipants = selectedParticipantPhones.toList(),
+                                                newPhoto = groupPhotoBase64,
+                                                newDescription = groupDescription,
+                                                membersCanEditInfo = it
+                                            )
+                                        },
+                                        colors = androidx.compose.material3.SwitchDefaults.colors(checkedThumbColor = WhatsAppGreenVal)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(20.dp))
+                            }
+
+                            // LEAVE GROUP BUTTON
+                            Button(
+                                onClick = {
+                                    viewModel.leaveGroup(contact.phone)
+                                    onDismiss()
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.ExitToApp, contentDescription = "Leave", tint = Color.White, modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(txt("গ্রুপ ত্যাগ করুন 👋", "Leave Group 👋"), color = Color.White, fontWeight = FontWeight.Bold)
+                                }
+                            }
+
+                            // DELETE GROUP BUTTON (OWNER ONLY)
+                            if (isMeOwner) {
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Button(
+                                    onClick = {
+                                        showDeleteConfirmDialog = true
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color.Black),
+                                    border = BorderStroke(1.dp, Color(0xFFDC2626)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color(0xFFDC2626), modifier = Modifier.size(18.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(txt("গ্রুপ ডিলিট করুন (শুধুমাত্র ওনার)", "Delete Group (Owner Only)"), color = Color(0xFFDC2626), fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
@@ -6173,38 +7310,162 @@ fun ManageGroupDialog(
                     }
                 }
             }
-        },
-        confirmButton = {
-            if (isGroupAdmin) {
+        }
+    }
+}
+
+    // INNER ADD MEMBER DIALOG
+    if (showAddMemberDialog) {
+        val nonGroupMembers = nonGroupContacts.filter { !selectedParticipantPhones.contains(it.phone) }
+        AlertDialog(
+            onDismissRequest = { showAddMemberDialog = false },
+            title = { Text(txt("সদস্য যুক্ত করুন", "Add Members to Group"), fontWeight = FontWeight.Bold, color = WhatsAppTealVal) },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    if (nonGroupMembers.isEmpty()) {
+                        Text(txt("যুক্ত করার মতো কোনো নতুন কন্টাক্ট নেই", "No new contacts available to add"), color = Color.Gray, fontSize = 13.sp)
+                    } else {
+                        LazyColumn(modifier = Modifier.height(200.dp)) {
+                            items(nonGroupMembers) { c ->
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            selectedParticipantPhones.add(c.phone)
+                                            viewModel.updateGroup(
+                                                groupId = contact.phone,
+                                                newName = groupName,
+                                                newParticipants = selectedParticipantPhones.toList(),
+                                                newPhoto = groupPhotoBase64,
+                                                newDescription = groupDescription
+                                            )
+                                            showAddMemberDialog = false
+                                        }
+                                        .padding(vertical = 6.dp)
+                                ) {
+                                    AvatarView(name = c.name, base64 = c.profilePicUri, size = 32)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Column {
+                                        Text(c.name, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                        Text(c.phone, color = Color.Gray, fontSize = 10.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showAddMemberDialog = false }) {
+                    Text(txt("বন্ধ করুন", "Cancel"), color = Color.Gray)
+                }
+            }
+        )
+    }
+
+    // 1. Delete Group Confirm Dialog
+    if (showDeleteConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmDialog = false },
+            title = { Text(txt("গ্রুপ ডিলিট নিশ্চিত করুন", "Confirm Group Deletion"), color = Color.Red, fontWeight = FontWeight.Bold) },
+            text = { Text(txt("আপনি কি নিশ্চিতভাবে এই গ্রুপটি স্থায়ীভাবে ডিলিট করতে চান? এই কাজটি আর ফিরিয়ে আনা যাবে না।", "Are you sure you want to permanently delete this group? This action cannot be undone.")) },
+            confirmButton = {
                 Button(
                     onClick = {
-                        if (groupName.trim().isEmpty()) {
-                            hasError = true
-                        } else {
-                            viewModel.updateGroup(contact.phone, groupName, selectedParticipantPhones.toList())
-                            onDismiss()
-                        }
+                        showDeleteConfirmDialog = false
+                        viewModel.deleteGroup(contact.phone)
+                        onDismiss()
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = WhatsAppGreenVal)
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626))
                 ) {
-                    Text("পরিবর্তন সেভ করুন", color = Color.White)
+                    Text(txt("ডিলিট করুন", "Delete"), color = Color.White)
                 }
-            } else {
-                Text(
-                    text = "⚠️ আপনি এই গ্রুপের এডমিন নন (Read-only)",
-                    color = Color(0xFFFFB300),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                )
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirmDialog = false }) {
+                    Text(txt("বাতিল", "Cancel"), color = Color.Gray)
+                }
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("বন্ধ করুন", color = Color.Gray)
+        )
+    }
+
+    // 2. Remove Member Confirm Dialog
+    if (pendingRemovePhone != null) {
+        val removePhone = pendingRemovePhone!!
+        val removeContact = allContacts.find { it.phone == removePhone }
+        val removeName = removeContact?.name ?: removePhone
+        AlertDialog(
+            onDismissRequest = { pendingRemovePhone = null },
+            title = { Text(txt("সদস্য অপসারণ নিশ্চিত করুন", "Confirm Member Removal"), color = Color.Red, fontWeight = FontWeight.Bold) },
+            text = { Text(txt("আপনি কি নিশ্চিতভাবে $removeName কে গ্রুপ থেকে অপসারণ করতে চান?", "Are you sure you want to remove $removeName from the group?")) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        pendingRemovePhone = null
+                        selectedParticipantPhones.remove(removePhone)
+                        viewModel.updateGroup(
+                            groupId = contact.phone,
+                            newName = groupName,
+                            newParticipants = selectedParticipantPhones.toList(),
+                            newPhoto = groupPhotoBase64,
+                            newDescription = groupDescription
+                        )
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626))
+                ) {
+                    Text(txt("অপসারণ করুন", "Remove"), color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingRemovePhone = null }) {
+                    Text(txt("বাতিল", "Cancel"), color = Color.Gray)
+                }
             }
-        }
-    )
+        )
+    }
+
+    // 3. Transfer Ownership Confirm Dialog
+    if (pendingTransferPhone != null) {
+        val transferPhone = pendingTransferPhone!!
+        val transferContact = allContacts.find { it.phone == transferPhone }
+        val transferName = transferContact?.name ?: transferPhone
+        AlertDialog(
+            onDismissRequest = { pendingTransferPhone = null },
+            title = { Text(txt("মালিকানা হস্তান্তর নিশ্চিত করুন", "Confirm Ownership Transfer"), color = WhatsAppTealVal, fontWeight = FontWeight.Bold) },
+            text = { Text(txt("আপনি কি নিশ্চিতভাবে $transferName এর কাছে গ্রুপের ওনার বা মালিকানা হস্তান্তর করতে চান? মালিকানা হস্তান্তরের পর আপনি সাধারণ এডমিন হয়ে যাবেন।", "Are you sure you want to transfer ownership of the group to $transferName? Once transferred, you will become a regular admin.")) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        pendingTransferPhone = null
+                        groupOwner = transferPhone
+                        sharedPrefs.edit().putString("group_owner_${contact.phone}", transferPhone).apply()
+                        val updatedAdmins = (groupAdminsStr.split(",").filter { it.isNotEmpty() } + transferPhone).distinct().joinToString(",")
+                        groupAdminsStr = updatedAdmins
+                        sharedPrefs.edit().putString("group_admins_${contact.phone}", updatedAdmins).apply()
+                        
+                        viewModel.updateGroup(
+                            groupId = contact.phone,
+                            newName = groupName,
+                            newParticipants = selectedParticipantPhones.toList(),
+                            newPhoto = groupPhotoBase64,
+                            newDescription = groupDescription,
+                            owner = transferPhone,
+                            admins = updatedAdmins
+                        )
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = WhatsAppTealVal)
+                ) {
+                    Text(txt("হস্তান্তর করুন", "Transfer"), color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingTransferPhone = null }) {
+                    Text(txt("বাতিল", "Cancel"), color = Color.Gray)
+                }
+            }
+        )
+    }
 }
 
 fun copyUriToLocalFile(context: Context, uri: android.net.Uri): String? {

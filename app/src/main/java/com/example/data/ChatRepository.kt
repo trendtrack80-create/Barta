@@ -238,28 +238,92 @@ class ChatRepository(
             sharedPrefs.edit().putString("group_creator_" + contact.phone, creator).apply()
         }
 
+        val owner = sharedPrefs.getString("group_owner_" + contact.phone, creator)?.ifEmpty { creator } ?: creator
+        val admins = sharedPrefs.getString("group_admins_" + contact.phone, "") ?: ""
+        val adminsCanEditInfo = sharedPrefs.getBoolean("group_admins_can_edit_info_" + contact.phone, true)
+        val adminsCanPinMessages = sharedPrefs.getBoolean("group_admins_can_pin_messages_" + contact.phone, true)
+        val membersCanEditInfo = sharedPrefs.getBoolean("group_members_can_edit_info_" + contact.phone, false)
+        val description = sharedPrefs.getString("group_description_" + contact.phone, "") ?: ""
+        val pinnedMessageId = sharedPrefs.getString("pinned_message_id_" + contact.phone, "") ?: ""
+
         val data = hashMapOf(
             "id" to contact.phone,
             "name" to contact.name,
             "participants" to contact.groupParticipants,
             "isGroup" to true,
             "creator" to creator,
+            "owner" to owner,
+            "admins" to admins,
+            "admins_can_edit_info" to adminsCanEditInfo,
+            "admins_can_pin_messages" to adminsCanPinMessages,
+            "members_can_edit_info" to membersCanEditInfo,
+            "description" to description,
+            "pinned_message_id" to pinnedMessageId,
             "createdAt" to System.currentTimeMillis()
         )
         db.collection("groups").document(contact.phone).set(data, com.google.firebase.firestore.SetOptions.merge())
     }
 
-    suspend fun updateGroup(groupId: String, newName: String, newParticipants: List<String>) {
+    suspend fun updateGroup(
+        groupId: String,
+        newName: String,
+        newParticipants: List<String>,
+        profilePicUri: String? = null,
+        description: String? = null,
+        owner: String? = null,
+        admins: String? = null,
+        adminsCanEditInfo: Boolean? = null,
+        adminsCanPinMessages: Boolean? = null,
+        membersCanEditInfo: Boolean? = null
+    ) {
         val currentGroup = contactDao.getContactByPhone(groupId) ?: return
         val participantPhones = newParticipants.joinToString(",")
+
+        val editor = sharedPrefs.edit()
+        if (description != null) {
+            editor.putString("group_description_$groupId", description)
+        }
+        if (owner != null) {
+            editor.putString("group_owner_$groupId", owner)
+            editor.putString("group_creator_$groupId", owner)
+        }
+        if (admins != null) {
+            editor.putString("group_admins_$groupId", admins)
+        }
+        if (adminsCanEditInfo != null) {
+            editor.putBoolean("group_admins_can_edit_info_$groupId", adminsCanEditInfo)
+        }
+        if (adminsCanPinMessages != null) {
+            editor.putBoolean("group_admins_can_pin_messages_$groupId", adminsCanPinMessages)
+        }
+        if (membersCanEditInfo != null) {
+            editor.putBoolean("group_members_can_edit_info_$groupId", membersCanEditInfo)
+        }
+        editor.apply()
+
         val updatedGroup = currentGroup.copy(
             name = newName.trim(),
-            groupParticipants = participantPhones
+            groupParticipants = participantPhones,
+            profilePicUri = profilePicUri ?: currentGroup.profilePicUri
         )
         contactDao.updateContact(updatedGroup)
         if (firestore != null) {
             syncGroupToFirestore(updatedGroup)
         }
+    }
+
+    suspend fun deleteGroup(groupId: String, myNumber: String) {
+        val owner = sharedPrefs.getString("group_owner_$groupId", "")?.ifEmpty {
+            sharedPrefs.getString("group_creator_$groupId", "") ?: ""
+        } ?: ""
+        if (owner.isNotEmpty() && owner != myNumber) {
+            return
+        }
+        val group = contactDao.getContactByPhone(groupId) ?: return
+        contactDao.deleteContact(group)
+        messageDao.deleteMessagesForChat(myNumber, groupId)
+        val db = firestore ?: return
+        db.collection("groups").document(groupId).delete()
     }
 
     suspend fun updateContact(contact: Contact) {
@@ -454,15 +518,20 @@ class ChatRepository(
         messageDao.markDeletedForMe(msgId)
     }
 
-    suspend fun deleteMessageForEveryone(myNumber: String, peerNumber: String, msgId: String) {
+    suspend fun deleteMessageForEveryone(myNumber: String, peerNumber: String, msgId: String, deleterName: String = "User") {
+        val msgText = "Deleted by: $deleterName"
         messageDao.markDeletedForEveryone(msgId)
+        messageDao.updateMessageText(msgId, msgText)
         firestore?.let { db ->
             val chatId = getChatId(myNumber, peerNumber)
             db.collection("chats")
                 .document(chatId)
                 .collection("messages")
                 .document(msgId)
-                .update("isDeletedForEveryone", true)
+                .update(
+                    "isDeletedForEveryone", true,
+                    "text", msgText
+                )
                 .addOnSuccessListener {
                     Log.d("BartaChat", "Message marked deleted for everyone in Firestore")
                 }
@@ -532,6 +601,24 @@ class ChatRepository(
                                 if (creator.isNotEmpty()) {
                                     sharedPrefs.edit().putString("group_creator_$id", creator).apply()
                                 }
+                                val owner = data["owner"] as? String ?: creator
+                                val admins = data["admins"] as? String ?: ""
+                                val adminsCanEditInfo = data["admins_can_edit_info"] as? Boolean ?: true
+                                val adminsCanPinMessages = data["admins_can_pin_messages"] as? Boolean ?: true
+                                val membersCanEditInfo = data["members_can_edit_info"] as? Boolean ?: false
+                                val description = data["description"] as? String ?: ""
+                                val pinnedMessageId = data["pinned_message_id"] as? String ?: ""
+
+                                sharedPrefs.edit()
+                                    .putString("group_owner_$id", owner)
+                                    .putString("group_admins_$id", admins)
+                                    .putBoolean("group_admins_can_edit_info_$id", adminsCanEditInfo)
+                                    .putBoolean("group_admins_can_pin_messages_$id", adminsCanPinMessages)
+                                    .putBoolean("group_members_can_edit_info_$id", membersCanEditInfo)
+                                    .putString("group_description_$id", description)
+                                    .putString("pinned_message_id_$id", pinnedMessageId)
+                                    .apply()
+
                                 val isParticipant = participants.split(",").contains(myNumber)
                                 val currentContact = contactDao.getContactByPhone(id)
                                 
@@ -1130,6 +1217,18 @@ class ChatRepository(
 
         if (myPhone.isEmpty()) return
 
+        var finalMediaUrl = mediaUrl
+        if (mediaUrl != null && !mediaUrl.startsWith("http://") && !mediaUrl.startsWith("https://")) {
+            val file = java.io.File(mediaUrl)
+            if (file.exists() && firebaseStorage != null) {
+                try {
+                    finalMediaUrl = uploadFileToStorage(file)
+                } catch (e: Exception) {
+                    Log.e("BartaChat", "Error uploading status image, using local path", e)
+                }
+            }
+        }
+
         val id = UUID.randomUUID().toString()
         val timestamp = System.currentTimeMillis()
 
@@ -1139,7 +1238,7 @@ class ChatRepository(
             name = myName,
             avatar = myAvatar,
             text = text,
-            mediaUrl = mediaUrl,
+            mediaUrl = finalMediaUrl,
             timestamp = timestamp,
             bgColorVal = bgColorVal,
             loves = "",
@@ -1155,7 +1254,7 @@ class ChatRepository(
                 "name" to myName,
                 "avatar" to myAvatar,
                 "text" to text,
-                "mediaUrl" to (mediaUrl ?: ""),
+                "mediaUrl" to (finalMediaUrl ?: ""),
                 "timestamp" to timestamp,
                 "bgColorVal" to bgColorVal,
                 "loves" to "",
@@ -1209,11 +1308,16 @@ class ChatRepository(
 
         repositoryScope.launch {
             try {
+                val localStatus = statusDao.getStatusById(statusId)
+                if (localStatus != null) {
+                    val updated = localStatus.copy(loves = newLoves)
+                    statusDao.insertStatus(updated)
+                }
                 firestore?.let { db ->
                     db.collection("statuses").document(statusId).update("loves", newLoves)
                         .addOnSuccessListener { onComplete(true) }
                         .addOnFailureListener { onComplete(false) }
-                } ?: onComplete(false)
+                } ?: onComplete(true)
             } catch (e: Exception) {
                 Log.e("BartaChat", "Error toggling love status", e)
                 onComplete(false)
@@ -1234,6 +1338,11 @@ class ChatRepository(
             val newViewers = viewersList.joinToString(",")
             repositoryScope.launch {
                 try {
+                    val localStatus = statusDao.getStatusById(statusId)
+                    if (localStatus != null) {
+                        val updated = localStatus.copy(viewers = newViewers)
+                        statusDao.insertStatus(updated)
+                    }
                     firestore?.let { db ->
                         db.collection("statuses").document(statusId).update("viewers", newViewers)
                             .addOnSuccessListener { Log.d("BartaChat", "Marked status $statusId as viewed") }

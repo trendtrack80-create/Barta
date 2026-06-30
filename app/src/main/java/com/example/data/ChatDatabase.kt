@@ -89,6 +89,9 @@ interface StatusDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertStatus(status: ChatStatus)
 
+    @Query("SELECT * FROM statuses WHERE id = :statusId")
+    suspend fun getStatusById(statusId: String): ChatStatus?
+
     @Query("DELETE FROM statuses WHERE timestamp < :cutoff")
     suspend fun pruneOldStatuses(cutoff: Long)
 

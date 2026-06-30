@@ -436,14 +436,22 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun createGroup(groupName: String, participants: List<Contact>) {
+    fun createGroup(groupName: String, participants: List<Contact>, groupPhoto: String = "", groupDescription: String = "") {
         val me = _myNumber.value ?: return
         val cleanName = groupName.trim()
         if (cleanName.isEmpty()) return
 
         viewModelScope.launch {
             val groupId = "group_" + java.util.UUID.randomUUID().toString().take(6)
-            sharedPrefs.edit().putString("group_creator_$groupId", me).apply()
+            sharedPrefs.edit()
+                .putString("group_creator_$groupId", me)
+                .putString("group_owner_$groupId", me)
+                .putString("group_admins_$groupId", "")
+                .putBoolean("group_admins_can_edit_info_$groupId", true)
+                .putBoolean("group_admins_can_pin_messages_$groupId", true)
+                .putBoolean("group_members_can_edit_info_$groupId", false)
+                .putString("group_description_$groupId", groupDescription)
+                .apply()
             val participantPhones = (listOf(me) + participants.map { it.phone }).distinct().joinToString(",")
             val newGroupContact = Contact(
                 phone = groupId,
@@ -452,13 +460,25 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 isGroup = true,
                 groupParticipants = participantPhones,
                 lastMessageText = "গ্রুপ চ্যাট তৈরি হয়েছে! চ্যাট শুরু করুন।",
-                lastMessageTime = System.currentTimeMillis()
+                lastMessageTime = System.currentTimeMillis(),
+                profilePicUri = groupPhoto
             )
             repository.addContact(newGroupContact)
         }
     }
 
-    fun updateGroup(groupId: String, newName: String, newParticipants: List<String>) {
+    fun updateGroup(
+        groupId: String,
+        newName: String,
+        newParticipants: List<String>,
+        newPhoto: String? = null,
+        newDescription: String? = null,
+        owner: String? = null,
+        admins: String? = null,
+        adminsCanEditInfo: Boolean? = null,
+        adminsCanPinMessages: Boolean? = null,
+        membersCanEditInfo: Boolean? = null
+    ) {
         val me = _myNumber.value
         val updatedParticipants = if (me != null && !newParticipants.contains(me)) {
             newParticipants + me
@@ -466,13 +486,141 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             newParticipants
         }
         viewModelScope.launch {
-            repository.updateGroup(groupId, newName, updatedParticipants)
+            repository.updateGroup(
+                groupId = groupId,
+                newName = newName,
+                newParticipants = updatedParticipants,
+                profilePicUri = newPhoto,
+                description = newDescription,
+                owner = owner,
+                admins = admins,
+                adminsCanEditInfo = adminsCanEditInfo,
+                adminsCanPinMessages = adminsCanPinMessages,
+                membersCanEditInfo = membersCanEditInfo
+            )
             if (_activeContact.value?.phone == groupId) {
                 val updated = repository.getContact(groupId)
                 if (updated != null) {
                     _activeContact.value = updated
                 }
             }
+        }
+    }
+
+    fun deleteGroup(groupId: String) {
+        val me = _myNumber.value ?: return
+        val currentOwner = sharedPrefs.getString("group_owner_$groupId", "")?.ifEmpty {
+            sharedPrefs.getString("group_creator_$groupId", "") ?: ""
+        } ?: ""
+        if (currentOwner.isNotEmpty() && currentOwner != me) {
+            return
+        }
+        viewModelScope.launch {
+            repository.updateTypingStatus(groupId, "")
+            repository.deleteGroup(groupId, me)
+            if (_activeContact.value?.phone == groupId) {
+                _activeContact.value = null
+            }
+        }
+    }
+
+    fun leaveGroup(groupId: String) {
+        val me = _myNumber.value ?: return
+        viewModelScope.launch {
+            val group = repository.getContact(groupId) ?: return@launch
+            val updatedParticipants = group.groupParticipants.split(",")
+                .filter { it.isNotEmpty() && it != me }
+            
+            if (updatedParticipants.isEmpty()) {
+                deleteGroup(groupId)
+            } else {
+                repository.sendMessage(
+                    sender = me,
+                    receiver = groupId,
+                    text = "has left the group.",
+                    isSimulatedReceiver = false,
+                    senderName = userDisplayName.value.ifEmpty { "User" },
+                    mediaUrl = null,
+                    mediaType = "system"
+                )
+                
+                val currentOwner = sharedPrefs.getString("group_owner_$groupId", "")?.ifEmpty {
+                    sharedPrefs.getString("group_creator_$groupId", "") ?: ""
+                } ?: ""
+                
+                if (currentOwner == me) {
+                    val adminsStr = sharedPrefs.getString("group_admins_$groupId", "") ?: ""
+                    val admins = adminsStr.split(",").filter { it.isNotEmpty() && it != me }
+                    val remainingMembers = updatedParticipants.filter { it != me }
+                    val newOwner = if (admins.isNotEmpty()) {
+                        admins.first()
+                    } else if (remainingMembers.isNotEmpty()) {
+                        remainingMembers.first()
+                    } else {
+                        ""
+                    }
+                    
+                    if (newOwner.isNotEmpty()) {
+                        sharedPrefs.edit().putString("group_owner_$groupId", newOwner).apply()
+                        val updatedAdmins = (admins + newOwner).distinct().joinToString(",")
+                        sharedPrefs.edit().putString("group_admins_$groupId", updatedAdmins).apply()
+                        
+                        val newOwnerContact = repository.getContact(newOwner)
+                        val newOwnerName = newOwnerContact?.name ?: newOwner
+                        repository.sendMessage(
+                            sender = "system",
+                            receiver = groupId,
+                            text = "Ownership transferred to $newOwnerName.",
+                            isSimulatedReceiver = false,
+                            senderName = "System",
+                            mediaUrl = null,
+                            mediaType = "system"
+                        )
+                        
+                        repository.updateGroup(
+                            groupId = groupId,
+                            newName = group.name,
+                            newParticipants = updatedParticipants,
+                            owner = newOwner,
+                            admins = updatedAdmins
+                        )
+                    } else {
+                        repository.updateGroup(groupId, group.name, updatedParticipants)
+                    }
+                } else {
+                    repository.updateGroup(groupId, group.name, updatedParticipants)
+                }
+                
+                if (_activeContact.value?.phone == groupId) {
+                    _activeContact.value = null
+                }
+            }
+        }
+    }
+
+    fun pinMessage(groupId: String, msgId: String) {
+        viewModelScope.launch {
+            sharedPrefs.edit().putString("pinned_message_id_$groupId", msgId).apply()
+            val group = repository.getContact(groupId) ?: return@launch
+            repository.updateGroup(
+                groupId = groupId,
+                newName = group.name,
+                newParticipants = group.groupParticipants.split(","),
+                profilePicUri = group.profilePicUri
+            )
+        }
+    }
+
+    fun unpinMessage(groupId: String) {
+        viewModelScope.launch {
+            sharedPrefs.edit().remove("pinned_message_id_$groupId").apply()
+            val group = repository.getContact(groupId) ?: return@launch
+            repository.updateGroup(
+                groupId = groupId,
+                newName = group.name,
+                newParticipants = group.groupParticipants.split(","),
+                profilePicUri = group.profilePicUri
+            )
         }
     }
 
@@ -594,8 +742,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     fun deleteMessageForEveryone(msgId: String) {
         val me = _myNumber.value ?: return
         val active = _activeContact.value ?: return
+        val myName = userDisplayName.value.ifEmpty { "User" }
         viewModelScope.launch {
-            repository.deleteMessageForEveryone(me, active.phone, msgId)
+            repository.deleteMessageForEveryone(me, active.phone, msgId, myName)
         }
     }
 
