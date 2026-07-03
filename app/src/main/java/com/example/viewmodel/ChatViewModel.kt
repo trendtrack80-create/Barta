@@ -2,13 +2,21 @@ package com.example.viewmodel
 
 import android.app.Application
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.room.Room
 import com.example.data.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val context = application.applicationContext
@@ -103,6 +111,136 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         sharedPrefs.edit().putBoolean("app_theme_dark", nextMode).apply()
     }
 
+    // Presence states
+    private var isNetworkConnected = true
+    private var isAppInForeground = true
+    private var heartbeatJob: kotlinx.coroutines.Job? = null
+    private var periodicPresenceJob: kotlinx.coroutines.Job? = null
+    val lastSeenPrivacy = MutableStateFlow("Everyone")
+
+    fun setAppForegrounded(isForeground: Boolean) {
+        isAppInForeground = isForeground
+        updatePresenceStatus()
+    }
+
+    private fun startMonitoringConnectivityAndPresence() {
+        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        if (connectivityManager != null) {
+            val activeNetwork = connectivityManager.activeNetwork
+            val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork)
+            isNetworkConnected = capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+            
+            val callback = object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    isNetworkConnected = true
+                    updatePresenceStatus()
+                }
+
+                override fun onLost(network: Network) {
+                    isNetworkConnected = false
+                    updatePresenceStatus()
+                }
+
+                override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
+                    isNetworkConnected = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    updatePresenceStatus()
+                }
+            }
+            connectivityManager.registerDefaultNetworkCallback(callback)
+        }
+    }
+
+    private fun updatePresenceStatus() {
+        val me = _myNumber.value ?: return
+        val shouldBeOnline = isAppInForeground && isNetworkConnected
+        if (shouldBeOnline) {
+            startHeartbeat(me)
+        } else {
+            stopHeartbeat(me)
+        }
+    }
+
+    private fun startHeartbeat(myPhone: String) {
+        if (heartbeatJob?.isActive == true) return
+        heartbeatJob = viewModelScope.launch(Dispatchers.IO) {
+            repository.updatePresence(myPhone, true)
+            while (coroutineContext.isActive) {
+                delay(20000)
+                repository.updateHeartbeat(myPhone)
+            }
+        }
+    }
+
+    private fun stopHeartbeat(myPhone: String) {
+        heartbeatJob?.cancel()
+        heartbeatJob = null
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.updatePresence(myPhone, false)
+        }
+    }
+
+    private fun startPeriodicPresenceReevaluation() {
+        if (periodicPresenceJob?.isActive == true) return
+        periodicPresenceJob = viewModelScope.launch(Dispatchers.IO) {
+            while (coroutineContext.isActive) {
+                delay(30000) // every 30 seconds
+                val me = _myNumber.value ?: continue
+                try {
+                    val firestoreUsers = repository.getAllFirestoreUsers()
+                    val now = System.currentTimeMillis()
+                    for (userData in firestoreUsers) {
+                        val phone = userData["phone"] as? String ?: continue
+                        if (phone == me) continue
+                        
+                        val rawLastSeen = userData["lastSeen"] as? String ?: "offline"
+                        val heartbeat = userData["heartbeat"] as? Long ?: 0L
+                        val lastSeenPrivacyVal = userData["lastSeenPrivacy"] as? String ?: "Everyone"
+                        val myContacts = userData["myContacts"] as? List<String> ?: emptyList()
+                        
+                        val isOnline = rawLastSeen == "online" && (now - heartbeat < 50000)
+                        
+                        val effectiveLastSeen = if (isOnline) {
+                            "online"
+                        } else {
+                            when (lastSeenPrivacyVal) {
+                                "Everyone" -> if (rawLastSeen == "online") heartbeat.toString() else rawLastSeen
+                                "My Contacts" -> if (myContacts.contains(me)) (if (rawLastSeen == "online") heartbeat.toString() else rawLastSeen) else "offline"
+                                "Nobody" -> "offline"
+                                else -> if (rawLastSeen == "online") heartbeat.toString() else rawLastSeen
+                            }
+                        }
+                        
+                        val currentContact = db.contactDao().getContactByPhone(phone)
+                        if (currentContact != null && currentContact.lastSeen != effectiveLastSeen) {
+                            db.contactDao().updateContactPresence(phone, effectiveLastSeen)
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e("BartaChat", "Periodic presence re-evaluation failed", e)
+                }
+            }
+        }
+    }
+
+    private fun stopPeriodicPresenceReevaluation() {
+        periodicPresenceJob?.cancel()
+        periodicPresenceJob = null
+    }
+
+    fun syncMyContactsToFirestore() {
+        val me = _myNumber.value ?: return
+        repository.syncMyContactsListToFirestore(me)
+    }
+
+    fun updateLastSeenPrivacy(privacy: String) {
+        lastSeenPrivacy.value = privacy
+        sharedPrefs.edit().putString("last_seen_privacy", privacy).apply()
+        val me = _myNumber.value ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.updateLastSeenPrivacy(me, privacy)
+        }
+    }
+
     // User profile state inputs
     val userDisplayName = MutableStateFlow("")
     val userStatusMessage = MutableStateFlow("")
@@ -117,6 +255,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         userDisplayName.value = sharedPrefs.getString("logged_user_display_name", "") ?: ""
         userStatusMessage.value = sharedPrefs.getString("logged_user_status_message", "বার্তা (Chat) ব্যবহার করছি!") ?: ""
         userProfilePicBase64.value = sharedPrefs.getString("logged_user_profile_pic", "") ?: ""
+        lastSeenPrivacy.value = sharedPrefs.getString("last_seen_privacy", "Everyone") ?: "Everyone"
+        startMonitoringConnectivityAndPresence()
         loadFirebaseConfig()
         
         // Seed some starter chatbot contacts if user is logged in
@@ -143,7 +283,32 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _myNumber.collect { me ->
                 if (me != null) {
-                    repository.updatePresence(me, true)
+                    // One-time cleanup of existing groups as requested by user
+                    val hasCleared = sharedPrefs.getBoolean("has_cleared_old_groups_v1", false)
+                    if (!hasCleared) {
+                        try {
+                            val groups = db.contactDao().getAllContacts().first().filter { it.isGroup }
+                            for (g in groups) {
+                                db.contactDao().deleteContact(g)
+                                db.messageDao().deleteMessagesForChat(me, g.phone)
+                            }
+                            val fs = repository.firestore
+                            if (fs != null) {
+                                fs.collection("groups").get().addOnSuccessListener { snapshots ->
+                                    if (snapshots != null) {
+                                        for (doc in snapshots.documents) {
+                                            doc.reference.delete()
+                                        }
+                                    }
+                                }
+                            }
+                        } catch (e: Exception) {
+                            android.util.Log.e("BartaChat", "One-time groups cleanup failed", e)
+                        }
+                        sharedPrefs.edit().putBoolean("has_cleared_old_groups_v1", true).apply()
+                    }
+
+                    updatePresenceStatus()
                     repository.startListeningToGroups(me) {
                         // real-time synchronization callback trigger
                     }
@@ -153,14 +318,20 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     repository.startGlobalChatsListener(me) {
                         // real-time global messaging synchronization callback trigger
                     }
-                    repository.startListeningToUserPresence {
+                    repository.startListeningToUserPresence(me) {
                         // real-time presence updated callback trigger
                     }
+                    startPeriodicPresenceReevaluation()
+                    syncMyContactsToFirestore()
+                    
+                    // Sync the lastSeenPrivacy to Firestore when starting
+                    repository.updateLastSeenPrivacy(me, lastSeenPrivacy.value)
                 } else {
                     repository.stopListeningToGroups()
                     repository.stopListeningToStatuses()
                     repository.stopAllMessageListeners()
                     repository.stopListeningToUserPresence()
+                    stopPeriodicPresenceReevaluation()
                 }
             }
         }
@@ -436,6 +607,13 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun insertContactAndSelect(contact: Contact) {
+        viewModelScope.launch {
+            db.contactDao().insertContact(contact)
+            selectContact(contact)
+        }
+    }
+
     fun createGroup(groupName: String, participants: List<Contact>, groupPhoto: String = "", groupDescription: String = "") {
         val me = _myNumber.value ?: return
         val cleanName = groupName.trim()
@@ -446,7 +624,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             sharedPrefs.edit()
                 .putString("group_creator_$groupId", me)
                 .putString("group_owner_$groupId", me)
-                .putString("group_admins_$groupId", "")
+                .putString("group_admins_$groupId", me)
                 .putBoolean("group_admins_can_edit_info_$groupId", true)
                 .putBoolean("group_admins_can_pin_messages_$groupId", true)
                 .putBoolean("group_members_can_edit_info_$groupId", false)
@@ -733,6 +911,26 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun generateAndSendImage(prompt: String, onStatusUpdate: (String) -> Unit = {}) {
+        val me = _myNumber.value ?: return
+        val active = _activeContact.value ?: return
+        val myName = userDisplayName.value.ifEmpty { "বার্তা ব্যবহারকারী" }
+        viewModelScope.launch {
+            try {
+                onStatusUpdate("Generating...")
+                val encodedPrompt = java.net.URLEncoder.encode(prompt, "UTF-8")
+                // Use robust free pollinations endpoint representing the Imagen tool fallback
+                val imageUrl = "https://image.pollinations.ai/prompt/$encodedPrompt?width=1024&height=1024&nologo=true&seed=${System.currentTimeMillis()}"
+                
+                sendMediaMessage(imageUrl, "image")
+                onStatusUpdate("Success")
+            } catch (e: Exception) {
+                android.util.Log.e("BartaChat", "Image generation failed", e)
+                onStatusUpdate("Failed")
+            }
+        }
+    }
+
     fun deleteMessageForMe(msgId: String) {
         viewModelScope.launch {
             repository.deleteMessageForMe(msgId)
@@ -753,6 +951,33 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         val active = _activeContact.value ?: return
         viewModelScope.launch {
             repository.editMessage(me, active.phone, msgId, newText)
+        }
+    }
+
+    fun reactToMessage(msgId: String, emoji: String) {
+        val me = _myNumber.value ?: return
+        val active = _activeContact.value ?: return
+        viewModelScope.launch {
+            repository.addMessageReaction(me, active.phone, msgId, emoji)
+        }
+    }
+
+    fun clearChat(peerPhone: String) {
+        val me = _myNumber.value ?: return
+        viewModelScope.launch {
+            db.messageDao().deleteMessagesForChat(me, peerPhone)
+            db.contactDao().updateLastMessage(peerPhone, "", System.currentTimeMillis())
+        }
+    }
+
+    fun deleteChat(contact: Contact) {
+        val me = _myNumber.value ?: return
+        viewModelScope.launch {
+            db.messageDao().deleteMessagesForChat(me, contact.phone)
+            db.contactDao().deleteContact(contact)
+            if (_activeContact.value?.phone == contact.phone) {
+                _activeContact.value = null
+            }
         }
     }
 
@@ -828,57 +1053,142 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val _syncedContacts = MutableStateFlow<List<SyncedContact>>(emptyList())
     val syncedContacts: StateFlow<List<SyncedContact>> = _syncedContacts.asStateFlow()
 
+    private val _onBartaContacts = MutableStateFlow<List<SyncedContact>>(emptyList())
+    val onBartaContacts: StateFlow<List<SyncedContact>> = _onBartaContacts.asStateFlow()
+
+    private val _inviteContacts = MutableStateFlow<List<Pair<String, String>>>(emptyList())
+    val inviteContacts: StateFlow<List<Pair<String, String>>> = _inviteContacts.asStateFlow()
+
     private val _isSyncing = MutableStateFlow(false)
     val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
+
+    private val _searchResultUser = MutableStateFlow<Map<String, Any>?>(null)
+    val searchResultUser: StateFlow<Map<String, Any>?> = _searchResultUser.asStateFlow()
+
+    private val _isSearchingServer = MutableStateFlow(false)
+    val isSearchingServer: StateFlow<Boolean> = _isSearchingServer.asStateFlow()
+
+    private val _searchError = MutableStateFlow<String?>(null)
+    val searchError: StateFlow<String?> = _searchError.asStateFlow()
+
+    fun clearSearchResult() {
+        _searchResultUser.value = null
+        _searchError.value = null
+    }
+
+    fun searchUserOnServer(phone: String) {
+        val normalizedQuery = normalizePhoneNumber(phone)
+        if (normalizedQuery.isEmpty()) {
+            _searchResultUser.value = null
+            _searchError.value = null
+            return
+        }
+        viewModelScope.launch {
+            _isSearchingServer.value = true
+            _searchResultUser.value = null
+            _searchError.value = null
+            try {
+                val users = repository.getAllFirestoreUsers()
+                val matched = users.find { doc ->
+                    val userPhone = doc["phone"] as? String ?: ""
+                    normalizePhoneNumber(userPhone) == normalizedQuery
+                }
+                if (matched != null) {
+                    _searchResultUser.value = matched
+                } else {
+                    _searchError.value = "not_found"
+                }
+            } catch (e: Exception) {
+                _searchError.value = "error"
+            } finally {
+                _isSearchingServer.value = false
+            }
+        }
+    }
 
     fun syncContacts(deviceContacts: List<Pair<String, String>>) {
         viewModelScope.launch {
             _isSyncing.value = true
             try {
+                val me = _myNumber.value ?: ""
+                val normalizedMe = normalizePhoneNumber(me)
+
                 // 1. Fetch all users from Firestore
                 val firestoreUsers = repository.getAllFirestoreUsers()
-                
+
                 // 2. Normalize and construct a lookup map of phone -> user data
                 val firestoreUsersMap = firestoreUsers.associateBy { doc ->
                     val phone = doc["phone"] as? String ?: ""
                     normalizePhoneNumber(phone)
                 }
-                
+
                 // 3. Match
-                val currentLocalPhones = repository.allContacts.first().map { it.phone }.toSet()
-                
+                val currentLocalContacts = repository.allContacts.first()
+                val currentLocalPhones = currentLocalContacts.map { it.phone }.toSet()
+
                 val resultList = mutableListOf<SyncedContact>()
+                val inviteList = mutableListOf<Pair<String, String>>()
+                val processedPhones = mutableSetOf<String>()
+
                 for ((deviceName, devicePhone) in deviceContacts) {
                     val normalizedDevicePhone = normalizePhoneNumber(devicePhone)
-                    if (normalizedDevicePhone.isEmpty() || normalizedDevicePhone == normalizePhoneNumber(_myNumber.value ?: "")) {
+                    if (normalizedDevicePhone.isEmpty() || normalizedDevicePhone == normalizedMe) {
                         continue
                     }
-                    
+
+                    if (processedPhones.contains(normalizedDevicePhone)) {
+                        continue
+                    }
+                    processedPhones.add(normalizedDevicePhone)
+
                     val matchDoc = firestoreUsersMap[normalizedDevicePhone]
                     if (matchDoc != null) {
                         val appName = matchDoc["name"] as? String ?: "বার্তা ব্যবহারকারী"
-                        val status = matchDoc["status"] as? String ?: "অনলাইন"
+                        val status = matchDoc["status"] as? String ?: "বার্তা (Chat) ব্যবহার করছি!"
                         val profilePic = matchDoc["profilePicBase64"] as? String ?: ""
                         val phoneKey = matchDoc["phone"] as? String ?: normalizedDevicePhone
-                        
-                        resultList.add(
-                            SyncedContact(
-                                phone = phoneKey,
-                                deviceName = deviceName,
-                                appName = appName,
-                                status = status,
-                                profilePicBase64 = profilePic,
-                                alreadyAdded = currentLocalPhones.contains(phoneKey)
-                            )
+
+                        val synced = SyncedContact(
+                            phone = phoneKey,
+                            deviceName = deviceName,
+                            appName = appName,
+                            status = status,
+                            profilePicBase64 = profilePic,
+                            alreadyAdded = currentLocalPhones.contains(phoneKey)
                         )
+                        resultList.add(synced)
+
+                        // Automatically sync to local Room database so they are in our chat list
+                        val existingContact = currentLocalContacts.find { it.phone == phoneKey }
+                        if (existingContact == null) {
+                            val newContact = Contact(
+                                phone = phoneKey,
+                                name = deviceName.ifEmpty { appName },
+                                isSimulated = false,
+                                lastSeen = "online",
+                                lastMessageText = "চ্যাট আরম্ভ করতে বার্তা পাঠান...",
+                                lastMessageTime = System.currentTimeMillis(),
+                                profilePicUri = profilePic
+                            )
+                            repository.addContact(newContact)
+                        } else if (existingContact.name != deviceName || existingContact.profilePicUri != profilePic) {
+                            val updatedContact = existingContact.copy(
+                                name = deviceName.ifEmpty { existingContact.name },
+                                profilePicUri = profilePic.ifEmpty { existingContact.profilePicUri }
+                            )
+                            repository.addContact(updatedContact)
+                        }
+                    } else {
+                        inviteList.add(deviceName to devicePhone)
                     }
                 }
-                
-                // Remove duplicates in resultList by phone
+
                 val distinctResult = resultList.distinctBy { it.phone }
                 _syncedContacts.value = distinctResult
+                _onBartaContacts.value = distinctResult
+                _inviteContacts.value = inviteList.distinctBy { normalizePhoneNumber(it.second) }
             } catch (e: Exception) {
-                // Ignore or handle
+                android.util.Log.e("BartaChat", "Sync contacts error", e)
             } finally {
                 _isSyncing.value = false
             }
@@ -937,7 +1247,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     override fun onCleared() {
         val me = _myNumber.value
         if (me != null) {
-            repository.updatePresence(me, false)
+            stopHeartbeat(me)
+            stopPeriodicPresenceReevaluation()
         }
         super.onCleared()
         repository.stopListeningToChat()

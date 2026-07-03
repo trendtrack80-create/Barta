@@ -15,20 +15,33 @@ import com.example.ui.theme.MyApplicationTheme
 import com.example.viewmodel.ChatViewModel
 
 class MainActivity : ComponentActivity() {
+  private var chatViewModel: ChatViewModel? = null
+
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
     setContent {
-      val chatViewModel: ChatViewModel = viewModel()
-      val isDarkState = chatViewModel.isDarkMode.collectAsState()
+      val vm: ChatViewModel = viewModel()
+      chatViewModel = vm
+      val isDarkState = vm.isDarkMode.collectAsState()
       MyApplicationTheme(darkTheme = isDarkState.value) {
         Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
           MainAppScreen(
-            viewModel = chatViewModel,
+            viewModel = vm,
             modifier = Modifier.padding(innerPadding)
           )
         }
       }
     }
+  }
+
+  override fun onStart() {
+    super.onStart()
+    chatViewModel?.setAppForegrounded(true)
+  }
+
+  override fun onStop() {
+    super.onStop()
+    chatViewModel?.setAppForegrounded(false)
   }
 }

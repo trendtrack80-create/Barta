@@ -26,7 +26,7 @@ class ChatRepository(
     private val statusDao: StatusDao,
     private val context: Context
 ) {
-    private var firestore: FirebaseFirestore? = null
+    var firestore: FirebaseFirestore? = null
     private var firebaseStorage: com.google.firebase.storage.FirebaseStorage? = null
     private var messageListener: ListenerRegistration? = null
     private val activeMessageListeners = HashMap<String, ListenerRegistration>()
@@ -226,6 +226,10 @@ class ChatRepository(
             } else {
                 syncContactToFirestore(contact)
             }
+        }
+        val me = sharedPrefs.getString("logged_user_phone", null)
+        if (me != null) {
+            syncMyContactsListToFirestore(me)
         }
     }
 
@@ -694,6 +698,7 @@ class ChatRepository(
                             val mediaType = data["mediaType"] as? String ?: ""
                             val isDeletedForEveryone = data["isDeletedForEveryone"] as? Boolean ?: false
                             val isEdited = data["isEdited"] as? Boolean ?: false
+                            val reactions = data["reactions"] as? String ?: ""
 
                             if (id.isNotEmpty()) {
                                 val message = Message(
@@ -707,7 +712,8 @@ class ChatRepository(
                                     mediaUrl = mediaUrl.ifEmpty { null },
                                     mediaType = mediaType.ifEmpty { null },
                                     isDeletedForEveryone = isDeletedForEveryone,
-                                    isEdited = isEdited
+                                    isEdited = isEdited,
+                                    reactions = reactions
                                 )
                                 messageDao.insertMessage(message)
                                 
@@ -771,6 +777,7 @@ class ChatRepository(
                             val mediaType = data["mediaType"] as? String ?: ""
                             val isDeletedForEveryone = data["isDeletedForEveryone"] as? Boolean ?: false
                             val isEdited = data["isEdited"] as? Boolean ?: false
+                            val reactions = data["reactions"] as? String ?: ""
 
                             if (id.isNotEmpty()) {
                                 val message = Message(
@@ -784,7 +791,8 @@ class ChatRepository(
                                     mediaUrl = mediaUrl.ifEmpty { null },
                                     mediaType = mediaType.ifEmpty { null },
                                     isDeletedForEveryone = isDeletedForEveryone,
-                                    isEdited = isEdited
+                                    isEdited = isEdited,
+                                    reactions = reactions
                                 )
                                 messageDao.insertMessage(message)
 
@@ -1005,7 +1013,7 @@ class ChatRepository(
             "profilePicUri" to contact.profilePicUri,
             "isSimulated" to contact.isSimulated
         )
-        db.collection("users").document(contact.phone).set(data)
+        db.collection("users").document(contact.phone).set(data, com.google.firebase.firestore.SetOptions.merge())
     }
 
     fun triggerChatbotResponse(userPhone: String, botPhone: String, userMessage: String) {
@@ -1033,12 +1041,11 @@ class ChatRepository(
                         language = language
                     )
                 } catch (e: Exception) {
-                    Log.e("BartaChat", "Gemini error: ${e.message}", e)
-                    val errorDetail = e.message ?: e.toString()
+                    Log.e("BartaChat", "AI response generation failed: ${e.message}", e)
                     if (language == "bn") {
-                        "দুঃখিত, সংযোগে সমস্যা হয়েছে! (ত্রুটি: $errorDetail)। অনুগ্রহ করে আপনার এআই এপিআই কি (API Key) বা ক্লাউড ফাংশন এবং ইন্টারনেট কানেকশন যাচাই করুন।"
+                        "লিমিট শেষ"
                     } else {
-                        "Sorry, an error occurred while connecting to the AI! (Error: $errorDetail). Please verify your AI API Key, Cloud Function, or internet connection."
+                        "Limit reached"
                     }
                 }
 
@@ -1423,7 +1430,8 @@ class ChatRepository(
         val db = firestore ?: return
         val lastSeenVal = if (isOnline) "online" else System.currentTimeMillis().toString()
         val data = hashMapOf<String, Any>(
-            "lastSeen" to lastSeenVal
+            "lastSeen" to lastSeenVal,
+            "heartbeat" to System.currentTimeMillis()
         )
         db.collection("users").document(phone).set(data, com.google.firebase.firestore.SetOptions.merge())
             .addOnSuccessListener {
@@ -1434,7 +1442,46 @@ class ChatRepository(
             }
     }
 
-    fun startListeningToUserPresence(onPresenceUpdated: () -> Unit) {
+    fun updateHeartbeat(phone: String) {
+        val db = firestore ?: return
+        val data = hashMapOf<String, Any>(
+            "lastSeen" to "online",
+            "heartbeat" to System.currentTimeMillis()
+        )
+        db.collection("users").document(phone).set(data, com.google.firebase.firestore.SetOptions.merge())
+    }
+
+    fun updateLastSeenPrivacy(phone: String, privacy: String) {
+        val db = firestore ?: return
+        val data = hashMapOf<String, Any>(
+            "lastSeenPrivacy" to privacy
+        )
+        db.collection("users").document(phone).set(data, com.google.firebase.firestore.SetOptions.merge())
+            .addOnSuccessListener {
+                Log.d("BartaChat", "Sync lastSeenPrivacy success for $phone: $privacy")
+            }
+    }
+
+    fun syncMyContactsListToFirestore(myPhone: String) {
+        val db = firestore ?: return
+        repositoryScope.launch(Dispatchers.IO) {
+            try {
+                val contacts = contactDao.getAllContacts().firstOrNull() ?: emptyList()
+                val nonGroupPhones = contacts.filter { !it.isGroup && !it.isSimulated }.map { it.phone }
+                val data = hashMapOf<String, Any>(
+                    "myContacts" to nonGroupPhones
+                )
+                db.collection("users").document(myPhone).set(data, com.google.firebase.firestore.SetOptions.merge())
+                    .addOnSuccessListener {
+                        Log.d("BartaChat", "Successfully synced contacts list to Firestore for $myPhone")
+                    }
+            } catch (e: Exception) {
+                Log.e("BartaChat", "Failed to sync contacts list to Firestore", e)
+            }
+        }
+    }
+
+    fun startListeningToUserPresence(myPhone: String, onPresenceUpdated: () -> Unit) {
         usersPresenceListener?.remove()
         val db = firestore ?: return
 
@@ -1447,15 +1494,51 @@ class ChatRepository(
 
                 if (snapshots != null) {
                     repositoryScope.launch {
+                        val now = System.currentTimeMillis()
                         for (doc in snapshots.documentChanges) {
                             val data = doc.document.data
                             val phone = data["phone"] as? String ?: doc.document.id
-                            val lastSeenVal = data["lastSeen"] as? String ?: "offline"
+                            if (phone == myPhone) continue // do not overwrite own local presence
+
+                            val rawLastSeen = data["lastSeen"] as? String ?: "offline"
+                            val heartbeat = data["heartbeat"] as? Long ?: 0L
+                            val lastSeenPrivacy = data["lastSeenPrivacy"] as? String ?: "Everyone"
+                            val myContacts = data["myContacts"] as? List<String> ?: emptyList()
+
+                            // Online only if "online" and updated within last 50 seconds (tolerance for sudden disconnect/crash)
+                            val isOnline = rawLastSeen == "online" && (now - heartbeat < 50000)
+
+                            val effectiveLastSeen = if (isOnline) {
+                                "online"
+                            } else {
+                                when (lastSeenPrivacy) {
+                                    "Everyone" -> {
+                                        if (rawLastSeen == "online") {
+                                            heartbeat.toString()
+                                        } else {
+                                            rawLastSeen
+                                        }
+                                    }
+                                    "My Contacts" -> {
+                                        if (myContacts.contains(myPhone)) {
+                                            if (rawLastSeen == "online") heartbeat.toString() else rawLastSeen
+                                        } else {
+                                            "offline"
+                                        }
+                                    }
+                                    "Nobody" -> {
+                                        "offline"
+                                    }
+                                    else -> {
+                                        if (rawLastSeen == "online") heartbeat.toString() else rawLastSeen
+                                    }
+                                }
+                            }
 
                             if (phone.isNotEmpty()) {
                                 val currentContact = contactDao.getContactByPhone(phone)
                                 if (currentContact != null) {
-                                    contactDao.updateContactPresence(phone, lastSeenVal)
+                                    contactDao.updateContactPresence(phone, effectiveLastSeen)
                                 }
                             }
                         }
@@ -1465,6 +1548,43 @@ class ChatRepository(
                     }
                 }
             }
+    }
+
+    suspend fun addMessageReaction(myPhone: String, peerPhone: String, msgId: String, emoji: String) {
+        val msg = messageDao.getMessageById(msgId) ?: return
+        val parsedReactions = if (msg.reactions.isEmpty()) {
+            mutableMapOf()
+        } else {
+            msg.reactions.split(",").mapNotNull {
+                val parts = it.split(":", limit = 2)
+                if (parts.size == 2) parts[0] to parts[1] else null
+            }.toMap().toMutableMap()
+        }
+        
+        if (parsedReactions[myPhone] == emoji) {
+            parsedReactions.remove(myPhone)
+        } else {
+            parsedReactions[myPhone] = emoji
+        }
+        
+        val newReactionsStr = parsedReactions.map { "${it.key}:${it.value}" }.joinToString(",")
+        val updatedMessage = msg.copy(reactions = newReactionsStr)
+        messageDao.insertMessage(updatedMessage)
+
+        firestore?.let { db ->
+            val chatId = if (peerPhone.startsWith("group_")) peerPhone else getChatId(myPhone, peerPhone)
+            db.collection("chats")
+                .document(chatId)
+                .collection("messages")
+                .document(msgId)
+                .update("reactions", newReactionsStr)
+                .addOnSuccessListener {
+                    Log.d("BartaChat", "Reaction synced successfully")
+                }
+                .addOnFailureListener { e ->
+                    Log.e("BartaChat", "Reaction sync failed", e)
+                }
+        }
     }
 
     fun stopListeningToUserPresence() {

@@ -33,7 +33,8 @@ data class Message(
     val isDeletedForEveryone: Boolean = false,
     val isEdited: Boolean = false,
     val isPending: Boolean = false,
-    val isForwarded: Boolean = false
+    val isForwarded: Boolean = false,
+    val reactions: String = ""
 )
 
 @Entity(tableName = "local_users")

@@ -48,9 +48,9 @@ object GeminiService {
         val isBn = language == "bn"
         if (!isInternetAvailable(context)) {
             return if (isBn) {
-                "ইন্টারনেট সংযোগ নেই। অনুগ্রহ করে মোবাইল ডেটা চালু করুন অথবা এমন একটি ওয়াই-ফাই নেটওয়ার্কের সাথে সংযুক্ত হন যাতে সচল ইন্টারনেট সুবিধা রয়েছে।"
+                "লিমিট শেষ"
             } else {
-                "No internet connection. Please turn on mobile data or connect to a Wi-Fi network with internet access."
+                "Limit reached"
             }
         }
 
@@ -137,9 +137,9 @@ object GeminiService {
         val apiKey = BuildConfig.GEMINI_API_KEY
         if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") {
             return if (language == "bn") {
-                "দুঃখিত, কোনো এআই এপিআই কি (API Key) বা ক্লাউড ফাংশন ইউআরএল কনফিগার করা নেই। দয়া করে সেটিংস থেকে সেট করুন।"
+                "লিমিট শেষ"
             } else {
-                "Sorry, no Gemini API Key or Cloud Function URL has been configured. Please configure them in Settings."
+                "Limit reached"
             }
         }
 
