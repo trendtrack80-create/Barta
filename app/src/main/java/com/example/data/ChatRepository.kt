@@ -27,6 +27,7 @@ class ChatRepository(
     private val context: Context
 ) {
     var firestore: FirebaseFirestore? = null
+    var firebaseAuth: com.google.firebase.auth.FirebaseAuth? = null
     private var firebaseStorage: com.google.firebase.storage.FirebaseStorage? = null
     private var messageListener: ListenerRegistration? = null
     private val activeMessageListeners = HashMap<String, ListenerRegistration>()
@@ -121,6 +122,7 @@ class ChatRepository(
                         builder.build()
                     )
                 firestore = FirebaseFirestore.getInstance(app)
+                firebaseAuth = com.google.firebase.auth.FirebaseAuth.getInstance(app)
                 firebaseStorage = com.google.firebase.storage.FirebaseStorage.getInstance(app)
                 Log.d("BartaChat", "Firebase initialized successfully programmatically!")
                 true
@@ -405,6 +407,7 @@ class ChatRepository(
                     .set(firestoreMsg)
                     .addOnSuccessListener {
                         Log.d("BartaChat", "Message synced to Firestore successfully!")
+                        queueNotification(db, chatId, messageId, sender, receiver, text, senderName, mediaType)
                     }
                     .addOnFailureListener { e ->
                         Log.e("BartaChat", "Error uploading message to Firestore", e)
@@ -494,6 +497,13 @@ class ChatRepository(
                     .collection("messages")
                     .document(messageId)
                     .set(firestoreMsg)
+                    .addOnSuccessListener {
+                        Log.d("BartaChat", "Message forwarded to Firestore successfully!")
+                        queueNotification(db, chatId, messageId, sender, receiver, text, senderName, mediaType)
+                    }
+                    .addOnFailureListener { e ->
+                        Log.e("BartaChat", "Error forwarding message to Firestore", e)
+                    }
 
                 val chatParticipants = if (receiver.startsWith("group_")) {
                     val contact = contactDao.getContactByPhone(receiver)
@@ -516,6 +526,37 @@ class ChatRepository(
                     .set(chatMeta, com.google.firebase.firestore.SetOptions.merge())
             }
         }
+    }
+
+    private fun queueNotification(
+        db: com.google.firebase.firestore.FirebaseFirestore,
+        chatId: String,
+        messageId: String,
+        sender: String,
+        receiver: String,
+        text: String,
+        senderName: String,
+        mediaType: String? = null
+    ) {
+        val fcmPayload = hashMapOf(
+            "chatId" to chatId,
+            "messageId" to messageId,
+            "senderId" to sender,
+            "senderName" to senderName,
+            "receiverId" to receiver,
+            "text" to (if (mediaType != null) "[${mediaType.replaceFirstChar { it.uppercase() }}]" else text),
+            "timestamp" to System.currentTimeMillis(),
+            "isGroup" to receiver.startsWith("group_"),
+            "senderProfilePic" to (sharedPrefs.getString("logged_user_profile_pic", "") ?: "")
+        )
+
+        db.collection("notifications").add(fcmPayload)
+            .addOnSuccessListener {
+                Log.d("BartaChat", "Push notification queued in Firestore successfully!")
+            }
+            .addOnFailureListener { e ->
+                Log.e("BartaChat", "Failed to queue push notification in Firestore", e)
+            }
     }
 
     suspend fun deleteMessageForMe(msgId: String) {
@@ -746,6 +787,7 @@ class ChatRepository(
 
     fun setActiveChatPhone(phone: String?) {
         activeChatPhone = phone
+        sharedPrefs.edit().putString("active_chat_phone", phone).apply()
     }
 
     @Synchronized
@@ -768,6 +810,12 @@ class ChatRepository(
                             val data = doc.document.data
                             val id = data["id"] as? String ?: ""
                             val senderId = data["senderId"] as? String ?: ""
+                            
+                            // Skip processing incoming messages from blocked users
+                            val isSenderBlocked = sharedPrefs.getBoolean("is_blocked_$senderId", false)
+                            if (isSenderBlocked && senderId != myNumber) {
+                                continue
+                            }
                             val receiverId = data["receiverId"] as? String ?: ""
                             val text = data["text"] as? String ?: ""
                             val timestamp = data["timestamp"] as? Long ?: System.currentTimeMillis()
@@ -931,7 +979,7 @@ class ChatRepository(
         return if (number1 < number2) "${number1}_${number2}" else "${number2}_${number1}"
     }
 
-    fun syncOwnProfileToFirestore(phone: String, name: String, status: String, profilePicBase64: String = "", passwordHash: String = "") {
+    fun syncOwnProfileToFirestore(phone: String, name: String, status: String, profilePicBase64: String = "", email: String = "", createdAt: Long = 0L) {
         val db = firestore ?: return
         val data = hashMapOf<String, Any>(
             "phone" to phone,
@@ -940,9 +988,13 @@ class ChatRepository(
             "profilePicBase64" to profilePicBase64,
             "isSimulated" to false
         )
-        if (passwordHash.isNotEmpty()) {
-            data["passwordHash"] = passwordHash
+        if (email.isNotEmpty()) {
+            data["email"] = email.trim().lowercase()
         }
+        if (createdAt != 0L) {
+            data["createdAt"] = createdAt
+        }
+        // Do NOT store plain text password or raw password hash in Firestore for production-grade security compliance.
         db.collection("users").document(phone).set(data, com.google.firebase.firestore.SetOptions.merge())
     }
 
@@ -956,6 +1008,25 @@ class ChatRepository(
             .addOnSuccessListener { document ->
                 if (document != null && document.exists()) {
                     continuation.resume(document.data)
+                } else {
+                    continuation.resume(null)
+                }
+            }
+            .addOnFailureListener {
+                continuation.resume(null)
+            }
+    }
+
+    suspend fun getUserByEmailFromFirestore(email: String): Map<String, Any>? = suspendCancellableCoroutine { continuation ->
+        val db = firestore
+        if (db == null) {
+            continuation.resume(null)
+            return@suspendCancellableCoroutine
+        }
+        db.collection("users").whereEqualTo("email", email.trim().lowercase()).get()
+            .addOnSuccessListener { querySnapshot ->
+                if (querySnapshot != null && !querySnapshot.isEmpty) {
+                    continuation.resume(querySnapshot.documents.first().data)
                 } else {
                     continuation.resume(null)
                 }
@@ -990,9 +1061,7 @@ class ChatRepository(
         if (getUserByPhone(phone) != null) return false
         val user = LocalUser(phone, name, passwordHash, profilePicBase64)
         userDao.insertUser(user)
-        syncOwnProfileToFirestore(phone, name, "বার্তা (Chat) ব্যবহার করছি!", profilePicBase64, passwordHash)
-        
-        // Also add themselves or simulated bot contact
+        syncOwnProfileToFirestore(phone, name, "বার্তা (Chat) ব্যবহার করছি!", profilePicBase64)
         return true
     }
 
@@ -1002,7 +1071,235 @@ class ChatRepository(
 
     suspend fun updateUser(user: LocalUser) {
         userDao.updateUser(user)
-        syncOwnProfileToFirestore(user.phone, user.name, user.status, user.profilePicBase64, user.passwordHash)
+        val email = sharedPrefs.getString("logged_user_email", "") ?: ""
+        syncOwnProfileToFirestore(user.phone, user.name, user.status, user.profilePicBase64, email = email)
+    }
+
+    suspend fun registerWithFirebaseAuth(
+        phone: String,
+        name: String,
+        email: String,
+        passwordHash: String,
+        profilePicBase64: String
+    ): String? = suspendCancellableCoroutine { continuation ->
+        val auth = firebaseAuth
+        val db = firestore
+        if (auth == null || db == null) {
+            continuation.resume("Firebase is not configured correctly on this device.")
+            return@suspendCancellableCoroutine
+        }
+
+        // 1. Check if email is unique in Firestore
+        db.collection("users").whereEqualTo("email", email.trim().lowercase()).get()
+            .addOnSuccessListener { emailQuery ->
+                if (!emailQuery.isEmpty) {
+                    continuation.resume("An account with this email address already exists!")
+                    return@addOnSuccessListener
+                }
+
+                // 2. Check if phone is unique in Firestore
+                db.collection("users").document(phone.trim()).get()
+                    .addOnSuccessListener { phoneDoc ->
+                        if (phoneDoc.exists()) {
+                            continuation.resume("An account with this phone number already exists!")
+                            return@addOnSuccessListener
+                        }
+
+                        // 3. Email and Phone are unique, proceed with FirebaseAuth createUser
+                        auth.createUserWithEmailAndPassword(email.trim().lowercase(), passwordHash)
+                            .addOnSuccessListener { authResult ->
+                                val user = authResult.user
+                                if (user != null) {
+                                    val createdAt = System.currentTimeMillis()
+                                    // 4. Save profile in Firestore
+                                    val data = hashMapOf<String, Any>(
+                                        "phone" to phone.trim(),
+                                        "name" to name.trim(),
+                                        "email" to email.trim().lowercase(),
+                                        "profilePicBase64" to profilePicBase64,
+                                        "status" to "বার্তা (Chat) ব্যবহার করছি!",
+                                        "createdAt" to createdAt,
+                                        "isSimulated" to false
+                                    )
+                                    db.collection("users").document(phone.trim()).set(data)
+                                        .addOnSuccessListener {
+                                            // 5. Store locally in Room Database for offline support
+                                            repositoryScope.launch {
+                                                val localUser = LocalUser(
+                                                    phone = phone.trim(),
+                                                    name = name.trim(),
+                                                    passwordHash = passwordHash, // stored local-only for offline login
+                                                    profilePicBase64 = profilePicBase64,
+                                                    status = "বার্তা (Chat) ব্যবহার করছি!"
+                                                )
+                                                userDao.insertUser(localUser)
+                                                
+                                                // Save to SharedPreferences
+                                                sharedPrefs.edit()
+                                                    .putString("logged_user_phone", phone.trim())
+                                                    .putString("logged_user_display_name", name.trim())
+                                                    .putString("logged_user_profile_pic", profilePicBase64)
+                                                    .putString("logged_user_status_message", "বার্তা (Chat) ব্যবহার করছি!")
+                                                    .putString("logged_user_email", email.trim().lowercase())
+                                                    .putLong("logged_user_created_at", createdAt)
+                                                    .apply()
+                                                
+                                                continuation.resume(null) // Success
+                                            }
+                                        }
+                                        .addOnFailureListener { e ->
+                                            continuation.resume("Failed to save profile in Firestore: ${e.localizedMessage}")
+                                        }
+                                } else {
+                                    continuation.resume("Firebase user creation succeeded but returned null user.")
+                                }
+                            }
+                            .addOnFailureListener { exception ->
+                                continuation.resume(exception.localizedMessage ?: "Failed to create account in Firebase Auth.")
+                            }
+                    }
+                    .addOnFailureListener { e ->
+                        continuation.resume("Failed to verify phone uniqueness: ${e.localizedMessage}")
+                    }
+            }
+            .addOnFailureListener { e ->
+                continuation.resume("Failed to verify email uniqueness: ${e.localizedMessage}")
+            }
+    }
+
+    suspend fun loginWithFirebaseAuth(
+        emailOrPhone: String,
+        passwordHash: String
+    ): String? = suspendCancellableCoroutine { continuation ->
+        val auth = firebaseAuth
+        val db = firestore
+        if (auth == null || db == null) {
+            continuation.resume("Firebase is not configured correctly on this device.")
+            return@suspendCancellableCoroutine
+        }
+
+        val cleanInput = emailOrPhone.trim()
+        val isEmail = cleanInput.contains("@")
+
+        if (isEmail) {
+            // Log in with email directly
+            auth.signInWithEmailAndPassword(cleanInput.lowercase(), passwordHash)
+                .addOnSuccessListener { authResult ->
+                    // Fetch Firestore profile associated with this email
+                    db.collection("users").whereEqualTo("email", cleanInput.lowercase()).get()
+                        .addOnSuccessListener { querySnapshot ->
+                            if (!querySnapshot.isEmpty) {
+                                val doc = querySnapshot.documents.first()
+                                val phone = doc.getString("phone") ?: ""
+                                val name = doc.getString("name") ?: "ব্যবহারকারী"
+                                val pic = doc.getString("profilePicBase64") ?: ""
+                                val status = doc.getString("status") ?: "বার্তা (Chat) ব্যবহার করছি!"
+                                val createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis()
+
+                                repositoryScope.launch {
+                                    // Store locally in Room Database for offline support
+                                    val localUser = LocalUser(phone, name, passwordHash, pic, status)
+                                    userDao.insertUser(localUser)
+
+                                    // Save to SharedPreferences
+                                    sharedPrefs.edit()
+                                        .putString("logged_user_phone", phone)
+                                        .putString("logged_user_display_name", name)
+                                        .putString("logged_user_profile_pic", pic)
+                                        .putString("logged_user_status_message", status)
+                                        .putString("logged_user_email", cleanInput.lowercase())
+                                        .putLong("logged_user_created_at", createdAt)
+                                        .apply()
+
+                                    continuation.resume(null) // Success
+                                }
+                            } else {
+                                continuation.resume("Login succeeded but profile was not found in Firestore.")
+                            }
+                        }
+                        .addOnFailureListener { e ->
+                            continuation.resume("Failed to load user profile: ${e.localizedMessage}")
+                        }
+                }
+                .addOnFailureListener { exception ->
+                    continuation.resume(exception.localizedMessage ?: "Invalid email or password.")
+                }
+        } else {
+            // Treated as phone number, automatically identify the associated email first
+            db.collection("users").document(cleanInput).get()
+                .addOnSuccessListener { document ->
+                    if (document != null && document.exists()) {
+                        val associatedEmail = document.getString("email")
+                        if (!associatedEmail.isNullOrBlank()) {
+                            auth.signInWithEmailAndPassword(associatedEmail, passwordHash)
+                                .addOnSuccessListener { authResult ->
+                                    val name = document.getString("name") ?: "ব্যবহারকারী"
+                                    val pic = document.getString("profilePicBase64") ?: ""
+                                    val status = document.getString("status") ?: "বার্তা (Chat) ব্যবহার করছি!"
+                                    val createdAt = document.getLong("createdAt") ?: System.currentTimeMillis()
+
+                                    repositoryScope.launch {
+                                        // Store locally
+                                        val localUser = LocalUser(cleanInput, name, passwordHash, pic, status)
+                                        userDao.insertUser(localUser)
+
+                                        // Save to SharedPreferences
+                                        sharedPrefs.edit()
+                                            .putString("logged_user_phone", cleanInput)
+                                            .putString("logged_user_display_name", name)
+                                            .putString("logged_user_profile_pic", pic)
+                                            .putString("logged_user_status_message", status)
+                                            .putString("logged_user_email", associatedEmail)
+                                            .putLong("logged_user_created_at", createdAt)
+                                            .apply()
+
+                                        continuation.resume(null) // Success
+                                    }
+                                }
+                                .addOnFailureListener { exception ->
+                                    continuation.resume(exception.localizedMessage ?: "Invalid phone or password.")
+                                }
+                        } else {
+                            continuation.resume("This phone number is registered, but has no email associated with it.")
+                        }
+                    } else {
+                        continuation.resume("No account found with this phone number!")
+                    }
+                }
+                .addOnFailureListener { e ->
+                    continuation.resume("Failed to look up associated email: ${e.localizedMessage}")
+                }
+        }
+    }
+
+    suspend fun sendPasswordResetEmail(email: String): String? = suspendCancellableCoroutine { continuation ->
+        val auth = firebaseAuth
+        val db = firestore
+        if (auth == null || db == null) {
+            continuation.resume("Firebase is not configured correctly on this device.")
+            return@suspendCancellableCoroutine
+        }
+
+        // Verify email exists in Firestore users collection
+        db.collection("users").whereEqualTo("email", email.trim().lowercase()).get()
+            .addOnSuccessListener { emailQuery ->
+                if (emailQuery.isEmpty) {
+                    continuation.resume("This email address is not registered in our system.")
+                    return@addOnSuccessListener
+                }
+
+                // Send reset email via Firebase Auth
+                auth.sendPasswordResetEmail(email.trim().lowercase())
+                    .addOnSuccessListener {
+                        continuation.resume(null) // Success
+                    }
+                    .addOnFailureListener { exception ->
+                        continuation.resume(exception.localizedMessage ?: "Failed to send reset email.")
+                    }
+            }
+            .addOnFailureListener { e ->
+                continuation.resume("Failed to verify email existence: ${e.localizedMessage}")
+            }
     }
 
     private fun syncContactToFirestore(contact: Contact) {
@@ -1017,6 +1314,10 @@ class ChatRepository(
     }
 
     fun triggerChatbotResponse(userPhone: String, botPhone: String, userMessage: String) {
+        val isBlocked = sharedPrefs.getBoolean("is_blocked_$botPhone", false)
+        if (isBlocked) {
+            return
+        }
         repositoryScope.launch {
             try {
                 contactDao.updateTypingStatus(botPhone, "typing...")
@@ -1057,7 +1358,7 @@ class ChatRepository(
                     receiverId = userPhone,
                     text = replyText,
                     timestamp = timestamp,
-                    senderName = if (language == "bn") "বার্তা সহকারী (Bot) 🤖" else "Barta Assistant 🤖"
+                    senderName = "Barta Ai Chat Bot"
                 )
                 messageDao.insertMessage(replyMessage)
                 contactDao.updateLastMessage(botPhone, replyText, timestamp)
@@ -1072,7 +1373,7 @@ class ChatRepository(
                         "text" to replyText,
                         "timestamp" to timestamp,
                         "isRead" to false,
-                        "senderName" to (if (language == "bn") "বার্তা সহকারী (Bot) 🤖" else "Barta Assistant 🤖"),
+                        "senderName" to "Barta Ai Chat Bot",
                         "mediaUrl" to "",
                         "mediaType" to "",
                         "isDeletedForEveryone" to false
@@ -1118,7 +1419,7 @@ class ChatRepository(
             noSpaces.contains("অ্যাপটিকেমনি") || noSpaces.contains("অ্যাপটাকেমনি") || 
             noSpaces.contains("কেমনআছে") || clean.contains("কেমন আছে") -> {
                 if (clean.contains("কেমন আছো") || clean.contains("কেমন আছ") || clean.contains("কেমন আছেন")) {
-                    "আসসালামু আলাইকুম $userName! কেমন আছেন? আমি বার্তা AI সহকারী। বার্তা (Chat) অ্যাপে আপনাকে স্বাগত! আমি মূলত এই অ্যাপ সংক্রান্ত প্রশ্নের উত্তর দিতে পারি। দয়া করে অ্যাপটি সম্পর্কে কোনো প্রশ্ন থাকলে আমাকে জিজ্ঞাসা করুন।"
+                    "আসসালামু আলাইকুম $userName! কেমন আছেন? আমি Barta Ai Chat Bot। বার্তা (Chat) অ্যাপে আপনাকে স্বাগত! আমি মূলত এই অ্যাপ সংক্রান্ত প্রশ্নের উত্তর দিতে পারি। দয়া করে অ্যাপটি সম্পর্কে কোনো প্রশ্ন থাকলে আমাকে জিজ্ঞাসা করুন।"
                 } else {
                     "এই অ্যাপটা ইয়সির আরাফাত সৌখিন এবং অন্নদাশঙ্কর উৎসব মিলে তৈরি করেছে। অ্যাপটার নাম বার্তা (Chat)। তারা চেয়েছিলো যেন স্টুডেন্টরা সহজে, distraction ছাড়া এবং নিরাপদভাবে চ্যাট করতে পারে। অ্যাপটায় রিয়াল-টাইম মেসেজিং, ছবি-ভিডিও পাঠানো, গ্রুপ তৈরি করা এবং মেসেজ ডিলিট করার সুবিধা আছে। এটাকে তারা শুধু একটা প্রজেক্ট হিসেবে না দেখে, একটা ছোট স্টার্টআপ আইডিয়া হিসেবে দেখছে।"
                 }
@@ -1200,7 +1501,7 @@ class ChatRepository(
             // Greeting fallback check
             clean.contains("hello") || clean.contains("hi") || clean.contains("হ্যালো") || clean.contains("হাই") || 
             clean.contains("কেমন আছ") || clean.contains("কেমন আছো") || clean.contains("কেমন আছেন") -> {
-                "আসসালামু আলাইকুম $userName! কেমন আছেন? আমি বার্তা AI সহকারী। বার্তা (Chat) অ্যাপে আপনাকে স্বাগত! আমি মূলত এই অ্যাপ সংক্রান্ত প্রশ্নের উত্তর দিতে পারি। দয়া করে অ্যাপটি সম্পর্কে কোনো প্রশ্ন থাকলে আমাকে জিজ্ঞাসা করুন।"
+                "আসসালামু আলাইকুম $userName! কেমন আছেন? আমি Barta Ai Chat Bot। বার্তা (Chat) অ্যাপে আপনাকে স্বাগত! আমি মূলত এই অ্যাপ সংক্রান্ত প্রশ্নের উত্তর দিতে পারি। দয়া করে অ্যাপটি সম্পর্কে কোনো প্রশ্ন থাকলে আমাকে জিজ্ঞাসা করুন।"
             }
 
             else -> {
@@ -1590,5 +1891,75 @@ class ChatRepository(
     fun stopListeningToUserPresence() {
         usersPresenceListener?.remove()
         usersPresenceListener = null
+    }
+
+    suspend fun clearAllFirebaseDataAndReset(): String? = withContext(Dispatchers.IO) {
+        val db = firestore
+        val auth = firebaseAuth
+
+        // 1. Wipe local database tables completely
+        try {
+            contactDao.deleteAllContacts()
+            messageDao.deleteAllMessages()
+            userDao.deleteAllUsers()
+            statusDao.deleteAllStatuses()
+        } catch (e: Exception) {
+            Log.e("BartaChat", "Failed to clear local database", e)
+        }
+
+        // 2. Clear SharedPreferences
+        try {
+            sharedPrefs.edit().clear().apply()
+        } catch (e: Exception) {
+            Log.e("BartaChat", "Failed to clear shared preferences", e)
+        }
+
+        // 3. Clear Firestore collections (users, chats, groups, statuses, notifications)
+        if (db != null) {
+            try {
+                // Delete users collection documents
+                val usersSnap = com.google.android.gms.tasks.Tasks.await(db.collection("users").get())
+                for (doc in usersSnap.documents) {
+                    com.google.android.gms.tasks.Tasks.await(db.collection("users").document(doc.id).delete())
+                }
+
+                // Delete groups collection documents
+                val groupsSnap = com.google.android.gms.tasks.Tasks.await(db.collection("groups").get())
+                for (doc in groupsSnap.documents) {
+                    com.google.android.gms.tasks.Tasks.await(db.collection("groups").document(doc.id).delete())
+                }
+
+                // Delete statuses collection documents
+                val statusesSnap = com.google.android.gms.tasks.Tasks.await(db.collection("statuses").get())
+                for (doc in statusesSnap.documents) {
+                    com.google.android.gms.tasks.Tasks.await(db.collection("statuses").document(doc.id).delete())
+                }
+
+                // Delete notifications collection documents
+                val notificationsSnap = com.google.android.gms.tasks.Tasks.await(db.collection("notifications").get())
+                for (doc in notificationsSnap.documents) {
+                    com.google.android.gms.tasks.Tasks.await(db.collection("notifications").document(doc.id).delete())
+                }
+
+                // Delete chats collection and their nested messages subcollections
+                val chatsSnap = com.google.android.gms.tasks.Tasks.await(db.collection("chats").get())
+                for (chatDoc in chatsSnap.documents) {
+                    val messagesSnap = com.google.android.gms.tasks.Tasks.await(
+                        db.collection("chats").document(chatDoc.id).collection("messages").get()
+                    )
+                    for (msgDoc in messagesSnap.documents) {
+                        com.google.android.gms.tasks.Tasks.await(
+                            db.collection("chats").document(chatDoc.id).collection("messages").document(msgDoc.id).delete()
+                        )
+                    }
+                    com.google.android.gms.tasks.Tasks.await(db.collection("chats").document(chatDoc.id).delete())
+                }
+            } catch (e: Exception) {
+                Log.e("BartaChat", "Failed to delete Firestore collections", e)
+                return@withContext e.localizedMessage ?: "Failed to clear some Firestore collections due to permissions or connection."
+            }
+        }
+        
+        null // success
     }
 }

@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
@@ -57,7 +58,7 @@ import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.*
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun AIAssistantChatScreen(
     viewModel: ChatViewModel,
@@ -82,6 +83,13 @@ fun AIAssistantChatScreen(
     // Conversations and messages states
     val sessions by db.aiSessionDao().getAllSessionsFlow().collectAsState(initial = emptyList())
     var activeSessionId by remember { mutableStateOf<String?>(null) }
+    
+    // Auto-select latest session on entry so history does not appear to vanish
+    androidx.compose.runtime.LaunchedEffect(sessions) {
+        if (activeSessionId == null && sessions.isNotEmpty()) {
+            activeSessionId = sessions.first().id
+        }
+    }
     
     val activeMessages = remember(activeSessionId) {
         if (activeSessionId != null) {
@@ -118,6 +126,9 @@ fun AIAssistantChatScreen(
     var showGenerateImageDialog by remember { mutableStateOf(false) }
     var imageGenerationPrompt by remember { mutableStateOf("") }
     var isGeneratingImage by remember { mutableStateOf(false) }
+    var showEditDialog by remember { mutableStateOf(false) }
+    var messageToEdit by remember { mutableStateOf<AiMessage?>(null) }
+    var editedTextState by remember { mutableStateOf("") }
 
     // Colors Custom Palette (Premium Look)
     val primaryColor = WhatsAppTealVal
@@ -225,12 +236,18 @@ fun AIAssistantChatScreen(
         }
     }
 
+    val isKeyboardOpen = WindowInsets.isImeVisible
+    LaunchedEffect(isKeyboardOpen) {
+        if (isKeyboardOpen && activeMessages.value.isNotEmpty()) {
+            listState.animateScrollToItem(activeMessages.value.size - 1)
+        }
+    }
+
     // Handle sending message
     fun sendMessage(textToSend: String) {
         if (textToSend.isBlank() || isGenerating) return
         
         inputText = ""
-        focusManager.clearFocus()
 
         scope.launch(Dispatchers.IO) {
             var currentSessionId = activeSessionId
@@ -326,7 +343,6 @@ fun AIAssistantChatScreen(
         if (prompt.isBlank() || isGenerating) return
         
         inputText = ""
-        focusManager.clearFocus()
 
         scope.launch(Dispatchers.IO) {
             var currentSessionId = activeSessionId
@@ -491,7 +507,7 @@ fun AIAssistantChatScreen(
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     Text(
-                        text = txt("বার্তা AI ইতিহাস", "Barta AI History"),
+                        text = txt("বার্তা এআই চ্যাট বট ইতিহাস", "Barta Ai Chat Bot History"),
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         color = if (isDarkTheme) Color.White else Color.Black
@@ -703,7 +719,7 @@ fun AIAssistantChatScreen(
                             )
                             Spacer(modifier = Modifier.width(10.dp))
                             Text(
-                                text = txt("বার্তা AI", "Barta AI"),
+                                text = txt("বার্তা এআই চ্যাট বট", "Barta Ai Chat Bot"),
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White,
                                 fontSize = 18.sp
@@ -737,7 +753,7 @@ fun AIAssistantChatScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(paddingValues)
+                    .padding(top = paddingValues.calculateTopPadding())
                     .background(
                         if (isDarkTheme) {
                             Brush.verticalGradient(
@@ -752,7 +768,16 @@ fun AIAssistantChatScreen(
             ) {
                 val messages = activeMessages.value
                 
-                if (messages.isEmpty() && !isGenerating) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                    ) {
+                        if (messages.isEmpty() && !isGenerating) {
                     // --- WELCOME HOME SCREEN ---
                     Column(
                         modifier = Modifier
@@ -796,7 +821,7 @@ fun AIAssistantChatScreen(
                         Spacer(modifier = Modifier.height(20.dp))
 
                         Text(
-                            text = txt("বার্তা AI", "Barta AI"),
+                            text = txt("বার্তা এআই চ্যাট বট", "Barta Ai Chat Bot"),
                             fontSize = 32.sp,
                             fontWeight = FontWeight.ExtraBold,
                             color = primaryColor,
@@ -848,7 +873,7 @@ fun AIAssistantChatScreen(
                         )
 
                         val prompts = listOf(
-                            txt("আমাকে একটি গান শোনাও 🎵", "Tell me a fun joke 🎵"),
+                            txt("আজকের দিনটি সুন্দর করার উপায় কী? 🌟", "How to make today a productive day? 🌟"),
                             txt("নতুন কোডিং শিখবো কীভাবে? 💻", "How to start learning coding? 💻"),
                             txt("বার্তা অ্যাপটির ফিচারগুলো কী কী? 📱", "What are Barta App features? 📱"),
                             txt("একটি ভ্রমণের সুন্দর পরিকল্পনা করো ✈️", "Plan a perfect weekend trip ✈️")
@@ -989,14 +1014,52 @@ fun AIAssistantChatScreen(
                                                     color = if (isUser) userBubbleText.copy(alpha = 0.6f) else Color.Gray
                                                 )
                                                 
-                                                if (!isUser) {
+                                                if (isUser) {
+                                                    // Action row for User responses: Copy and Edit
+                                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                        // Copy
+                                                        IconButton(
+                                                            onClick = {
+                                                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                                                val clip = android.content.ClipData.newPlainText("Barta Ai Chat Bot Message", message.text)
+                                                                clipboard.setPrimaryClip(clip)
+                                                                Toast.makeText(context, txt("বার্তা ক্লিপবোর্ডে কপি করা হয়েছে!", "Message copied to clipboard!"), Toast.LENGTH_SHORT).show()
+                                                            },
+                                                            modifier = Modifier.size(24.dp)
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Outlined.ContentCopy,
+                                                                contentDescription = "Copy message",
+                                                                tint = userBubbleText.copy(alpha = 0.6f),
+                                                                modifier = Modifier.size(13.dp)
+                                                            )
+                                                        }
+
+                                                        // Edit
+                                                        IconButton(
+                                                            onClick = {
+                                                                messageToEdit = message
+                                                                editedTextState = message.text
+                                                                showEditDialog = true
+                                                            },
+                                                            modifier = Modifier.size(24.dp)
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Outlined.Edit,
+                                                                contentDescription = "Edit message",
+                                                                tint = userBubbleText.copy(alpha = 0.6f),
+                                                                modifier = Modifier.size(13.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                } else {
                                                     // Action row for AI responses
                                                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                                         // Copy
                                                         IconButton(
                                                             onClick = {
                                                                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                                                                val clip = android.content.ClipData.newPlainText("Barta AI Message", message.text)
+                                                                val clip = android.content.ClipData.newPlainText("Barta Ai Chat Bot Message", message.text)
                                                                 clipboard.setPrimaryClip(clip)
                                                                 Toast.makeText(context, txt("বার্তা ক্লিপবোর্ডে কপি করা হয়েছে!", "Message copied to clipboard!"), Toast.LENGTH_SHORT).show()
                                                             },
@@ -1120,13 +1183,15 @@ fun AIAssistantChatScreen(
                         }
                     }
                 }
+            }
 
                 // --- STICKY INPUT CONTAINER AT BOTTOM ---
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .align(Alignment.BottomCenter)
                         .background(if (isDarkTheme) Color(0xFF0F172A) else Color.White)
+                        .navigationBarsPadding()
+                        .imePadding()
                         .padding(horizontal = 12.dp, vertical = 8.dp)
                 ) {
                     Row(
@@ -1179,32 +1244,46 @@ fun AIAssistantChatScreen(
                         
                         Spacer(modifier = Modifier.width(6.dp))
 
-                        OutlinedTextField(
-                            value = inputText,
-                            onValueChange = { inputText = it },
-                            placeholder = { Text(txt("বার্তা লিখুন...", "Ask Barta AI anything..."), fontSize = 14.sp) },
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .weight(1f)
-                                .testTag("ai_input_field"),
-                            maxLines = 4,
-                            shape = RoundedCornerShape(24.dp),
-                            keyboardOptions = KeyboardOptions(
-                                imeAction = ImeAction.Send
-                            ),
-                            keyboardActions = KeyboardActions(
-                                onSend = {
-                                    if (inputText.isNotBlank() && !isGenerating) {
-                                        sendMessage(inputText)
+                                .background(
+                                    if (isDarkTheme) Color(0xFF1E293B) else Color(0xFFF1F5F9),
+                                    shape = RoundedCornerShape(24.dp)
+                                )
+                                .border(
+                                    width = 1.dp,
+                                    color = Color.Gray.copy(alpha = 0.3f),
+                                    shape = RoundedCornerShape(24.dp)
+                                )
+                                .padding(horizontal = 16.dp, vertical = 10.dp)
+                        ) {
+                            BasicTextField(
+                                value = inputText,
+                                onValueChange = { inputText = it },
+                                textStyle = androidx.compose.ui.text.TextStyle(
+                                    color = if (isDarkTheme) Color.White else Color.Black,
+                                    fontSize = 15.sp
+                                ),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("ai_input_field"),
+                                maxLines = 4,
+                                decorationBox = { innerTextField ->
+                                    Box(modifier = Modifier.fillMaxWidth()) {
+                                        if (inputText.isEmpty()) {
+                                            Text(
+                                                text = txt("বার্তা লিখুন...", "Ask Barta Ai Chat Bot anything..."),
+                                                color = Color.Gray,
+                                                fontSize = 14.sp
+                                            )
+                                        }
+                                        innerTextField()
                                     }
                                 }
-                            ),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = primaryColor,
-                                unfocusedBorderColor = Color.Gray.copy(alpha = 0.3f),
-                                focusedContainerColor = if (isDarkTheme) Color(0xFF1E293B) else Color(0xFFF1F5F9),
-                                unfocusedContainerColor = if (isDarkTheme) Color(0xFF1E293B) else Color(0xFFF1F5F9)
                             )
-                        )
+                        }
 
                         Spacer(modifier = Modifier.width(8.dp))
 
@@ -1225,7 +1304,7 @@ fun AIAssistantChatScreen(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Send,
-                                contentDescription = "Send message to Barta AI",
+                                contentDescription = "Send message to Barta Ai Chat Bot",
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -1234,8 +1313,8 @@ fun AIAssistantChatScreen(
                     // Disclaimer footer note
                     Text(
                         text = txt(
-                            "বার্তা AI ভুল করতে পারে। গুরুত্বপূর্ণ তথ্য যাচাই করে নিন।",
-                            "Barta AI can make mistakes. Consider checking important info."
+                            "বার্তা এআই চ্যাট বট ভুল করতে পারে। গুরুত্বপূর্ণ তথ্য যাচাই করে নিন।",
+                            "Barta Ai Chat Bot can make mistakes. Consider checking important info."
                         ),
                         fontSize = 9.sp,
                         color = Color.Gray,
@@ -1248,8 +1327,68 @@ fun AIAssistantChatScreen(
             }
         }
     }
+    }
 
     // --- ALERTS AND CONFIRMATION DIALOGS ---
+
+    // Edit Message Dialog
+    if (showEditDialog && messageToEdit != null) {
+        AlertDialog(
+            onDismissRequest = { showEditDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(imageVector = Icons.Default.Edit, contentDescription = null, tint = primaryColor, modifier = Modifier.size(24.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(txt("বার্তা সংশোধন করুন", "Edit Message"), fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Column {
+                    Text(
+                        text = txt(
+                            "আপনার বার্তাটি সংশোধন করে নিচের বক্সে লিখুন:",
+                            "Modify your message and write in the box below:"
+                        ),
+                        fontSize = 13.sp,
+                        color = Color.Gray
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = editedTextState,
+                        onValueChange = { editedTextState = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = false,
+                        maxLines = 4
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val msg = messageToEdit
+                        if (msg != null && editedTextState.trim().isNotEmpty()) {
+                            val newText = editedTextState
+                            scope.launch(Dispatchers.IO) {
+                                db.aiMessageDao().updateMessageText(msg.id, newText)
+                                val updatedMsg = msg.copy(text = newText)
+                                syncMessageToCloud(updatedMsg)
+                            }
+                        }
+                        showEditDialog = false
+                    },
+                    enabled = editedTextState.isNotBlank(),
+                    colors = ButtonDefaults.buttonColors(containerColor = primaryColor)
+                ) {
+                    Text(txt("সংরক্ষণ করুন", "Save"), color = Color.White)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showEditDialog = false }) {
+                    Text(txt("বাতিল", "Cancel"))
+                }
+            }
+        )
+    }
 
     // Image Generation Dialog
     if (showGenerateImageDialog) {

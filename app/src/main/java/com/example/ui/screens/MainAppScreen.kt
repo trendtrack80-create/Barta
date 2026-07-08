@@ -676,7 +676,7 @@ fun OnboardingHighlightsPage(txt: (String, String) -> String) {
         ) {
             OnboardingFeatureCard(
                 icon = "🤖",
-                title = txt("স্মার্ট বার্তা সহকারী (AI Bot)", "Smart AI Assistant Bot"),
+                title = "Barta Ai Chat Bot",
                 description = txt("যেকোনো কঠিন প্রশ্নের উত্তর জানতে বা প্রজেক্ট সাজাতে সাহায্য বা সাধারণ চ্যাট করতে সর্বদা প্রস্তুত আপনার এআই বন্ধু!", "Your helper is always available to resolve assignments, write creative summaries, or guide chats.")
             )
 
@@ -749,11 +749,16 @@ fun AuthScreen(
     var isSignUp by remember { mutableStateOf(false) }
     var phoneNumber by remember { mutableStateOf("") }
     var nameInput by remember { mutableStateOf("") }
+    var emailInput by remember { mutableStateOf("") }
+    var emailOrPhoneInput by remember { mutableStateOf("") }
     var passwordInput by remember { mutableStateOf("") }
+    var confirmPasswordInput by remember { mutableStateOf("") }
     var profilePicBase64 by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var showPassword by remember { mutableStateOf(false) }
     var showPhotoSelector by remember { mutableStateOf(false) }
+    var isLoading by remember { mutableStateOf(false) }
+    var showForgotPasswordDialog by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
 
@@ -766,7 +771,6 @@ fun AuthScreen(
             showPhotoSelector = true
         } else {
             Toast.makeText(context, txt("ছবি আপলোড করতে স্টোরেজ/ক্যামেরা পারমিশন প্রয়োজন!", "Camera/Storage permission is required to upload profile pictures!"), Toast.LENGTH_LONG).show()
-            // Dynamic fallback list triggers anyways for great testing fidelity
             showPhotoSelector = true
         }
     }
@@ -951,7 +955,7 @@ fun AuthScreen(
                     text = if (isSignUp) txt("নতুন একাউন্ট তৈরি করুন", "Create New Account") else txt("লগইন করুন", "Log in to your Account"),
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp,
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
 
@@ -963,7 +967,6 @@ fun AuthScreen(
                             .clip(CircleShape)
                             .background(Color(0xFFEEEEEE))
                             .clickable {
-                                // Request dynamic permissions
                                 requestPermissionLauncher.launch(Manifest.permission.CAMERA)
                             }
                             .border(1.5.dp, WhatsAppGreenVal, CircleShape),
@@ -977,13 +980,37 @@ fun AuthScreen(
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier.fillMaxSize()
                                 )
-                            } else {
+                            } else if (profilePicBase64.startsWith("pic")) {
                                 Image(
                                     imageVector = getAvatarVector(profilePicBase64),
                                     contentDescription = "Profile Picture",
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier.fillMaxSize()
                                 )
+                            } else {
+                                val bitmap = remember(profilePicBase64) {
+                                    try {
+                                        val cleaned = profilePicBase64.substringAfter("base64,")
+                                        val decodedBytes = android.util.Base64.decode(cleaned, android.util.Base64.DEFAULT)
+                                        android.graphics.BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.size)
+                                    } catch (e: Exception) {
+                                        null
+                                    }
+                                }
+                                if (bitmap != null) {
+                                    Image(
+                                        bitmap = bitmap.asImageBitmap(),
+                                        contentDescription = "Profile Picture",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                } else {
+                                    Image(
+                                        imageVector = Icons.Default.AccountCircle,
+                                        contentDescription = "Profile Picture",
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
                             }
                         } else {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -1015,74 +1042,214 @@ fun AuthScreen(
                             .testTag("signup_name_input")
                             .padding(bottom = 12.dp)
                     )
+
+                    OutlinedTextField(
+                        value = phoneNumber,
+                        onValueChange = {
+                            phoneNumber = it.filter { char -> char.isDigit() }
+                            errorMessage = null
+                        },
+                        label = { Text(txt("মোবাইল নাম্বার", "Mobile Number")) },
+                        placeholder = { Text("01XXXXXXXXX") },
+                        prefix = { Text("+88 ") },
+                        singleLine = true,
+                        leadingIcon = { Icon(Icons.Default.PhoneAndroid, contentDescription = null, tint = Color.Gray) },
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Phone,
+                            imeAction = ImeAction.Next
+                        ),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                            unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                            focusedLabelColor = WhatsAppTealVal,
+                            unfocusedLabelColor = Color.Gray,
+                            focusedPrefixColor = MaterialTheme.colorScheme.onSurface,
+                            unfocusedPrefixColor = MaterialTheme.colorScheme.onSurface
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("signup_phone_input")
+                            .padding(bottom = 12.dp)
+                    )
+
+                    OutlinedTextField(
+                        value = emailInput,
+                        onValueChange = {
+                            emailInput = it
+                            errorMessage = null
+                        },
+                        label = { Text(txt("ইমেইল এড্রেস", "Email Address")) },
+                        placeholder = { Text("example@gmail.com") },
+                        singleLine = true,
+                        leadingIcon = { Icon(Icons.Default.Email, contentDescription = null, tint = Color.Gray) },
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Email,
+                            imeAction = ImeAction.Next
+                        ),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                            unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                            focusedLabelColor = WhatsAppTealVal,
+                            unfocusedLabelColor = Color.Gray
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("signup_email_input")
+                            .padding(bottom = 12.dp)
+                    )
+
+                    OutlinedTextField(
+                        value = passwordInput,
+                        onValueChange = {
+                            passwordInput = it
+                            errorMessage = null
+                        },
+                        label = { Text(txt("পাসওয়ার্ড (কমপক্ষে ৬ অক্ষর)", "Password (Min 6 characters)")) },
+                        placeholder = { Text("******") },
+                        singleLine = true,
+                        leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = Color.Gray) },
+                        trailingIcon = {
+                            IconButton(onClick = { showPassword = !showPassword }) {
+                                Icon(
+                                    imageVector = if (showPassword) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                    contentDescription = if (showPassword) "Hide" else "Show",
+                                    tint = Color.Gray
+                                )
+                            }
+                        },
+                        visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Password,
+                            imeAction = ImeAction.Next
+                        ),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                            unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                            focusedLabelColor = WhatsAppTealVal,
+                            unfocusedLabelColor = Color.Gray
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("signup_password_input")
+                            .padding(bottom = 12.dp)
+                    )
+
+                    OutlinedTextField(
+                        value = confirmPasswordInput,
+                        onValueChange = {
+                            confirmPasswordInput = it
+                            errorMessage = null
+                        },
+                        label = { Text(txt("পাসওয়ার্ড নিশ্চিত করুন", "Confirm Password")) },
+                        placeholder = { Text("******") },
+                        singleLine = true,
+                        leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = Color.Gray) },
+                        trailingIcon = {
+                            IconButton(onClick = { showPassword = !showPassword }) {
+                                Icon(
+                                    imageVector = if (showPassword) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                    contentDescription = if (showPassword) "Hide" else "Show",
+                                    tint = Color.Gray
+                                )
+                            }
+                        },
+                        visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Password,
+                            imeAction = ImeAction.Done
+                        ),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                            unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                            focusedLabelColor = WhatsAppTealVal,
+                            unfocusedLabelColor = Color.Gray
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("signup_confirm_password_input")
+                            .padding(bottom = 12.dp)
+                    )
+                } else {
+                    // Log In Inputs
+                    OutlinedTextField(
+                        value = emailOrPhoneInput,
+                        onValueChange = {
+                            emailOrPhoneInput = it
+                            errorMessage = null
+                        },
+                        label = { Text(txt("মোবাইল নাম্বার বা ইমেইল", "Mobile Number or Email")) },
+                        placeholder = { Text("01XXXXXXXXX / test@example.com") },
+                        singleLine = true,
+                        leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = Color.Gray) },
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Email,
+                            imeAction = ImeAction.Next
+                        ),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                            unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                            focusedLabelColor = WhatsAppTealVal,
+                            unfocusedLabelColor = Color.Gray
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("login_input")
+                            .padding(bottom = 12.dp)
+                    )
+
+                    OutlinedTextField(
+                        value = passwordInput,
+                        onValueChange = {
+                            passwordInput = it
+                            errorMessage = null
+                        },
+                        label = { Text(txt("পাসওয়ার্ড", "Password")) },
+                        placeholder = { Text("******") },
+                        singleLine = true,
+                        leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = Color.Gray) },
+                        trailingIcon = {
+                            IconButton(onClick = { showPassword = !showPassword }) {
+                                Icon(
+                                    imageVector = if (showPassword) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                    contentDescription = if (showPassword) "Hide" else "Show",
+                                    tint = Color.Gray
+                                )
+                            }
+                        },
+                        visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Password,
+                            imeAction = ImeAction.Done
+                        ),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                            unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                            focusedLabelColor = WhatsAppTealVal,
+                            unfocusedLabelColor = Color.Gray
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("login_password_input")
+                            .padding(bottom = 8.dp)
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp),
+                        contentAlignment = Alignment.CenterEnd
+                    ) {
+                        Text(
+                            text = txt("পাসওয়ার্ড ভুলে গেছেন?", "Forgot Password?"),
+                            color = WhatsAppTealVal,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier
+                                .clickable { showForgotPasswordDialog = true }
+                                .padding(vertical = 4.dp, horizontal = 8.dp)
+                        )
+                    }
                 }
-
-                // Phone Input field
-                OutlinedTextField(
-                    value = phoneNumber,
-                    onValueChange = {
-                        phoneNumber = it.filter { char -> char.isDigit() }
-                        errorMessage = null
-                    },
-                    label = { Text(txt("মোবাইল নাম্বার", "Mobile Number")) },
-                    placeholder = { Text("01XXXXXXXXX") },
-                    prefix = { Text("+88 ") },
-                    singleLine = true,
-                    leadingIcon = { Icon(Icons.Default.PhoneAndroid, contentDescription = null, tint = Color.Gray) },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Phone,
-                        imeAction = ImeAction.Next
-                    ),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                        focusedLabelColor = WhatsAppTealVal,
-                        unfocusedLabelColor = Color.Gray,
-                        focusedPrefixColor = MaterialTheme.colorScheme.onSurface,
-                        unfocusedPrefixColor = MaterialTheme.colorScheme.onSurface
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("login_phone_input")
-                        .padding(bottom = 12.dp)
-                )
-
-                // Password Input field (Strict 6 to 8 chars check)
-                OutlinedTextField(
-                    value = passwordInput,
-                    onValueChange = {
-                        passwordInput = it
-                        errorMessage = null
-                    },
-                    label = { Text(txt("পাসওয়ার্ড (৬-৮ ক্যারেক্টার)", "Password (6-8 characters)")) },
-                    placeholder = { Text("******") },
-                    singleLine = true,
-                    leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = Color.Gray) },
-                    trailingIcon = {
-                        IconButton(onClick = { showPassword = !showPassword }) {
-                            Icon(
-                                imageVector = if (showPassword) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                                contentDescription = if (showPassword) "Hide" else "Show",
-                                tint = Color.Gray
-                            )
-                        }
-                    },
-                    visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Password,
-                        imeAction = ImeAction.Done
-                    ),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                        focusedLabelColor = WhatsAppTealVal,
-                        unfocusedLabelColor = Color.Gray
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("login_password_input")
-                        .padding(bottom = 12.dp)
-                )
 
                 if (errorMessage != null) {
                     Text(
@@ -1097,13 +1264,40 @@ fun AuthScreen(
 
                 Button(
                     onClick = {
+                        if (isLoading) return@Button
+
                         if (isSignUp) {
+                            if (nameInput.isBlank()) {
+                                errorMessage = txt("দয়া করে আপনার নাম দিন!", "Please enter your name!")
+                                return@Button
+                            }
+                            if (phoneNumber.length != 11 || !phoneNumber.startsWith("01")) {
+                                errorMessage = txt("দয়া করে সঠিক ১১ ডিজিটের বাংলাদেশ মোবাইল নাম্বার দিন!", "Please enter a valid 11-digit Bangladeshi mobile number!")
+                                return@Button
+                            }
+                            if (emailInput.isBlank() || !emailInput.contains("@") || !emailInput.contains(".")) {
+                                errorMessage = txt("দয়া করে সঠিক ইমেইল এড্রেস দিন!", "Please enter a valid email address!")
+                                return@Button
+                            }
+                            if (passwordInput.length < 6) {
+                                errorMessage = txt("পাসওয়ার্ড অবশ্যই কমপক্ষে ৬ অক্ষরের হতে হবে!", "Password must be at least 6 characters!")
+                                return@Button
+                            }
+                            if (passwordInput != confirmPasswordInput) {
+                                errorMessage = txt("পাসওয়ার্ড দুটি মেলেনি!", "Passwords do not match!")
+                                return@Button
+                            }
+
+                            isLoading = true
+                            errorMessage = null
                             viewModel.register(
                                 phone = phoneNumber,
                                 name = nameInput,
+                                email = emailInput,
                                 password = passwordInput,
                                 profilePic = profilePicBase64
                             ) { error ->
+                                isLoading = false
                                 if (error != null) {
                                     errorMessage = error
                                 } else {
@@ -1111,7 +1305,19 @@ fun AuthScreen(
                                 }
                             }
                         } else {
-                            viewModel.loginWithPassword(phoneNumber, passwordInput) { error ->
+                            if (emailOrPhoneInput.isBlank()) {
+                                errorMessage = txt("দয়া করে আপনার মোবাইল নাম্বার বা ইমেইল দিন!", "Please enter your mobile number or email address!")
+                                return@Button
+                            }
+                            if (passwordInput.length < 6) {
+                                errorMessage = txt("পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে!", "Password must be at least 6 characters!")
+                                return@Button
+                            }
+
+                            isLoading = true
+                            errorMessage = null
+                            viewModel.loginWithPassword(emailOrPhoneInput, passwordInput) { error ->
+                                isLoading = false
                                 if (error != null) {
                                     errorMessage = error
                                 } else {
@@ -1125,17 +1331,128 @@ fun AuthScreen(
                         .fillMaxWidth()
                         .height(48.dp)
                         .testTag("submit_button"),
-                    shape = RoundedCornerShape(10.dp)
+                    shape = RoundedCornerShape(10.dp),
+                    enabled = !isLoading
                 ) {
-                    Text(
-                        text = if (isSignUp) txt("একাউন্ট তৈরি করুন", "Create Account") else txt("লগইন করুন", "Log In"),
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp
-                    )
+                    if (isLoading) {
+                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
+                    } else {
+                        Text(
+                            text = if (isSignUp) txt("একাউন্ট তৈরি করুন", "Create Account") else txt("লগইন করুন", "Log In"),
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
+                        )
+                    }
                 }
             }
         }
+    }
+
+    // Forgot Password Reset Email Dialog
+    if (showForgotPasswordDialog) {
+        var resetEmail by remember { mutableStateOf("") }
+        var isResetSending by remember { mutableStateOf(false) }
+        var resetSuccessMessage by remember { mutableStateOf<String?>(null) }
+        var resetErrorMessage by remember { mutableStateOf<String?>(null) }
+
+        AlertDialog(
+            onDismissRequest = {
+                if (!isResetSending) {
+                    showForgotPasswordDialog = false
+                    resetSuccessMessage = null
+                    resetErrorMessage = null
+                }
+            },
+            title = {
+                Text(
+                    text = txt("পাসওয়ার্ড পুনরুদ্ধার", "Reset Password"),
+                    fontWeight = FontWeight.Bold,
+                    color = WhatsAppTealVal
+                )
+            },
+            text = {
+                Column {
+                    Text(
+                        text = txt(
+                            "আপনার নিবন্ধিত ইমেইল এড্রেসটি দিন। আমরা সেখানে পাসওয়ার্ড রিসেট করার লিঙ্ক পাঠাবো।",
+                            "Enter your registered email address. We will send you a link to reset your password."
+                        ),
+                        fontSize = 13.sp,
+                        color = Color.Gray,
+                        modifier = Modifier.padding(bottom = 16.dp)
+                    )
+
+                    OutlinedTextField(
+                        value = resetEmail,
+                        onValueChange = {
+                            resetEmail = it
+                            resetErrorMessage = null
+                            resetSuccessMessage = null
+                        },
+                        label = { Text(txt("ইমেইল এড্রেস", "Email Address")) },
+                        placeholder = { Text("example@gmail.com") },
+                        singleLine = true,
+                        leadingIcon = { Icon(Icons.Default.Email, contentDescription = null, tint = Color.Gray) },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    if (resetErrorMessage != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(text = resetErrorMessage!!, color = Color.Red, fontSize = 12.sp)
+                    }
+
+                    if (resetSuccessMessage != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(text = resetSuccessMessage!!, color = WhatsAppGreenVal, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (resetEmail.isBlank() || !resetEmail.contains("@")) {
+                            resetErrorMessage = txt("দয়া করে সঠিক ইমেইল এড্রেস দিন!", "Please provide a valid email address!")
+                            return@Button
+                        }
+                        isResetSending = true
+                        resetErrorMessage = null
+                        resetSuccessMessage = null
+                        viewModel.sendPasswordReset(resetEmail) { err ->
+                            isResetSending = false
+                            if (err != null) {
+                                resetErrorMessage = err
+                            } else {
+                                resetSuccessMessage = txt(
+                                    "পাসওয়ার্ড রিসেট ইমেইল পাঠানো হয়েছে! আপনার ইনবক্স চেক করুন।",
+                                    "Password reset email has been sent! Please check your inbox."
+                                )
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = WhatsAppGreenVal),
+                    enabled = !isResetSending
+                ) {
+                    if (isResetSending) {
+                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(18.dp))
+                    } else {
+                        Text(txt("লিঙ্ক পাঠান", "Send Link"), color = Color.White)
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showForgotPasswordDialog = false
+                        resetSuccessMessage = null
+                        resetErrorMessage = null
+                    },
+                    enabled = !isResetSending
+                ) {
+                    Text(txt("বাতিল", "Cancel"), color = Color.Gray)
+                }
+            }
+        )
     }
 
     // Interactive Photo Selector Panel
@@ -1337,8 +1654,12 @@ fun ChatsTabScreen(
     val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
     val txt = getTranslator(viewModel = viewModel)
 
-    // Filter out group chats for individual conversations
-    val individualChats = remember(contactsList) { contactsList.filter { !it.isGroup } }
+    // Filter out group chats for individual conversations (only show active chats where messages exist, or the AI Bot)
+    val individualChats = remember(contactsList) {
+        contactsList.filter {
+            !it.isGroup && (it.lastMessageText != null || it.lastMessageTime > 0L || it.phone == "01300000000" || it.isSimulated)
+        }
+    }
 
     // Query on global registered users matching the name
     val searchedGlobalUsers by viewModel.searchedGlobalUsers.collectAsStateWithLifecycle()
@@ -1711,7 +2032,29 @@ fun ChatsTabScreen(
                             ChatRowItem(
                                 contact = contact,
                                 lang = appLanguage,
-                                onClick = { onChatClick(contact) }
+                                onClick = { onChatClick(contact) },
+                                onDeleteChat = {
+                                    viewModel.deleteChat(contact)
+                                    Toast.makeText(context, txt("চ্যাট মুছে ফেলা হয়েছে", "Chat deleted"), Toast.LENGTH_SHORT).show()
+                                },
+                                onToggleArchive = {
+                                    val current = bartaChatPrefs.getBoolean("archive_${contact.phone}", false)
+                                    bartaChatPrefs.edit().putBoolean("archive_${contact.phone}", !current).apply()
+                                    Toast.makeText(
+                                        context,
+                                        if (!current) txt("চ্যাট আর্কাইভ করা হয়েছে", "Chat archived") else txt("আর্কাইভ থেকে সরানো হয়েছে", "Chat unarchived"),
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                },
+                                onToggleBlock = {
+                                    val current = bartaChatPrefs.getBoolean("is_blocked_${contact.phone}", false)
+                                    bartaChatPrefs.edit().putBoolean("is_blocked_${contact.phone}", !current).apply()
+                                    Toast.makeText(
+                                        context,
+                                        if (!current) txt("ব্যবহারকারীকে ব্লক করা হয়েছে", "Contact blocked") else txt("আনব্লক করা হয়েছে", "Contact unblocked"),
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
                             )
                             Spacer(modifier = Modifier.height(6.dp))
                         }
@@ -2884,6 +3227,8 @@ fun SettingsTabScreen(
 
     var showPasswordChangeDialog by remember { mutableStateOf(false) }
     var newPasswordInput by remember { mutableStateOf("") }
+    var showResetConfirmDialog by remember { mutableStateOf(false) }
+    var isResettingData by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -3231,10 +3576,110 @@ fun SettingsTabScreen(
                         colors = SwitchDefaults.colors(checkedThumbColor = WhatsAppGreenVal, checkedTrackColor = WhatsAppGreenVal.copy(alpha = 0.4f))
                     )
                 }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+
+                // Lockscreen Notification Privacy Switch
+                val prefs = androidx.compose.ui.platform.LocalContext.current.getSharedPreferences("BartaChatPrefs", Context.MODE_PRIVATE)
+                var hideNotificationContentOnLockscreen by remember {
+                    mutableStateOf(prefs.getBoolean("hide_notification_content_lockscreen", false))
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(txt("লক স্ক্রিন নোটিফিকেশন হাইড", "Hide Content on Lock Screen"), fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurface)
+                        Text(txt("লক স্ক্রিনে বার্তার লেখা এবং প্রেরকের নাম লুকান", "Hide message content and sender name on lock screen"), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                    }
+                    Switch(
+                        checked = hideNotificationContentOnLockscreen,
+                        onCheckedChange = { checked ->
+                            hideNotificationContentOnLockscreen = checked
+                            prefs.edit().putBoolean("hide_notification_content_lockscreen", checked).apply()
+                            Toast.makeText(viewModel.getApplication(), txt("নোটিফিকেশন গোপনীয়তা আপডেট হয়েছে!", "Notification privacy updated!"), Toast.LENGTH_SHORT).show()
+                        },
+                        colors = SwitchDefaults.colors(checkedThumbColor = WhatsAppGreenVal, checkedTrackColor = WhatsAppGreenVal.copy(alpha = 0.4f))
+                    )
+                }
             }
         }
 
 
+
+        Text(
+            text = txt("ডেভেলপার ও রক্ষণাবেক্ষণ সেটিংস", "Developer & Maintenance Options"),
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+            modifier = Modifier.padding(start = 16.dp, bottom = 8.dp, top = 8.dp)
+        )
+
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 12.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            shape = RectangleShape
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = "Warning",
+                        tint = Color.Red
+                    )
+                    Spacer(modifier = Modifier.width(14.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = txt("সম্পূর্ণ ডাটাবেজ ও অ্যাকাউন্ট মুছে ফেলুন", "Clear Firebase Database & Reset"),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = Color.Red
+                        )
+                        Text(
+                            text = txt(
+                                "ফায়ারবেস থেকে সকল ব্যবহারকারী, মেসেজ, গ্রুপ ও স্টেটাস ডিলিট করে অ্যাপটি একদম নতুন করে শুরু করুন।",
+                                "Wipe Firestore collections (users, chats, groups, statuses) and reset local data entirely to start fresh."
+                            ),
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                Button(
+                    onClick = {
+                        if (!isConnected) {
+                            Toast.makeText(viewModel.getApplication(), txt("ইন্টারনেট কানেকশন ছাড়া ডাটা ডিলিট করা সম্ভব নয়!", "Data cannot be deleted without an internet connection!"), Toast.LENGTH_SHORT).show()
+                        } else {
+                            showResetConfirmDialog = true
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().testTag("clear_firebase_button"),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
+                    enabled = !isResettingData
+                ) {
+                    if (isResettingData) {
+                        CircularProgressIndicator(
+                            color = Color.White,
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(txt("মুছে ফেলা হচ্ছে...", "Clearing..."), color = Color.White, fontWeight = FontWeight.Bold)
+                    } else {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.White)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(txt("সব ডাটা মুছে রিসেট করুন", "Reset & Delete All Data"), color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
 
         // Logout Area
         Card(
@@ -3259,6 +3704,65 @@ fun SettingsTabScreen(
                 Text(txt("লগআউট করুন", "Logout"), color = Color.Red, fontWeight = FontWeight.Bold, fontSize = 16.sp)
             }
         }
+    }
+
+    if (showResetConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!isResettingData) showResetConfirmDialog = false },
+            icon = { Icon(Icons.Default.Warning, contentDescription = "Warning", tint = Color.Red, modifier = Modifier.size(40.dp)) },
+            title = {
+                Text(
+                    text = txt("ডাটাবেজ ও চ্যাট রিসেট নিশ্চিতকরণ", "Confirm Database & Chat Reset"),
+                    fontWeight = FontWeight.Bold,
+                    color = Color.Red
+                )
+            },
+            text = {
+                Text(
+                    text = txt(
+                        "আপনি কি নিশ্চিত যে আপনি ফায়ারবেস এবং লোকাল স্টোরেজ থেকে সকল ব্যবহারকারী, গ্রুপ, মেসেজ এবং স্ট্যাটাস চিরতরে ডিলিট করতে চান? এই কাজটি আর ফিরিয়ে আনা যাবে না এবং সবাই নতুন করে অ্যাকাউন্ট খুলতে পারবে। (ফায়ারবেস অথেন্টিকেশন ইউজারদের পুরোপুরি সরাতে ফায়ারবেস কনসোল থেকেও ডিলিট করতে পারেন।)",
+                        "Are you absolutely sure you want to permanently delete all users, groups, chats, statuses, and local databases? This action is irreversible and all users will have to register from scratch. (Note: To completely wipe login credentials, you may also clear Firebase Auth from the console.)"
+                    ),
+                    fontSize = 14.sp
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showResetConfirmDialog = false
+                        isResettingData = true
+                        viewModel.clearAllFirebaseDataAndReset { error ->
+                            isResettingData = false
+                            if (error == null) {
+                                Toast.makeText(
+                                    viewModel.getApplication(),
+                                    txt("সফলভাবে সকল ডাটা মুছে রিসেট করা হয়েছে!", "All data cleared and app reset successfully!"),
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            } else {
+                                Toast.makeText(
+                                    viewModel.getApplication(),
+                                    txt("রিসেট ত্রুটিঃ $error", "Reset failed: $error"),
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color.Red),
+                    enabled = !isResettingData
+                ) {
+                    Text(txt("হ্যাঁ, ডিলিট করুন", "Yes, Delete Everything"), fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showResetConfirmDialog = false },
+                    enabled = !isResettingData
+                ) {
+                    Text(txt("বাতিল", "Cancel"))
+                }
+            }
+        )
     }
 
     if (showPasswordChangeDialog) {
@@ -3320,113 +3824,237 @@ data class UserStatus(
     val bgColor: Color
 )
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun ChatRowItem(
     contact: Contact,
     lang: String = "bn",
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onDeleteChat: () -> Unit = {},
+    onToggleArchive: () -> Unit = {},
+    onToggleBlock: () -> Unit = {}
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 12.dp, horizontal = 16.dp)
-            .testTag("chat_row_${contact.phone}"),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        if (contact.isGroup) {
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .background(WhatsAppTealVal, shape = CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(Icons.Default.Groups, contentDescription = "Group", tint = Color.White)
-            }
-        } else {
-            AvatarView(name = contact.name, base64 = contact.profilePicUri, size = 44)
-        }
+    val context = LocalContext.current
+    val isBn = lang == "bn"
+    val txt = { bn: String, en: String -> if (isBn) bn else en }
+    val isDarkTheme = androidx.compose.foundation.isSystemInDarkTheme()
 
-        Spacer(modifier = Modifier.width(12.dp))
+    val sharedPrefs = remember(contact.phone) { context.getSharedPreferences("BartaChatPrefs", Context.MODE_PRIVATE) }
+    val savedNickname = remember(contact.phone) { sharedPrefs.getString("nickname_${contact.phone}", null) }
+    val displayName = if (!contact.isGroup && !savedNickname.isNullOrBlank()) savedNickname else contact.name
 
-        Column(
-            modifier = Modifier.weight(1f)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = contact.name,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                    if (contact.isGroup) {
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Box(
-                            modifier = Modifier
-                                .background(Color(0xFFE8F5E9), RoundedCornerShape(4.dp))
-                                .padding(horizontal = 4.dp, vertical = 2.dp)
-                        ) {
-                            Text("গ্রুপ", color = WhatsAppGreenVal, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-                
-                val isOnline = contact.lastSeen == "online" || contact.lastSeen == "অনলাইন"
-                Text(
-                    text = if (contact.isGroup) "group" else formatLastSeenDynamic(contact.lastSeen, lang),
-                    color = if (isOnline) WhatsAppGreenVal else Color.Gray,
-                    fontSize = 11.sp,
-                    fontWeight = if (isOnline) FontWeight.Bold else FontWeight.Normal
+    var showDropdown by remember { mutableStateOf(false) }
+
+    Box {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClick = { showDropdown = true }
                 )
-            }
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (contact.typingStatus.isNotEmpty()) {
-                    Text(
-                        text = "typing...",
-                        color = WhatsAppGreenVal,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                } else {
-                    Text(
-                        text = contact.lastMessageText ?: "কোনো বার্তা নেই",
-                        color = Color.Gray,
-                        fontSize = 14.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-
-                if (contact.unreadCount > 0) {
+                .padding(vertical = 12.dp, horizontal = 16.dp)
+                .testTag("chat_row_${contact.phone}"),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(modifier = Modifier.size(44.dp)) {
+                if (contact.isGroup) {
                     Box(
                         modifier = Modifier
-                            .background(WhatsAppGreenVal, shape = CircleShape)
-                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                            .size(44.dp)
+                            .background(WhatsAppTealVal, shape = CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = contact.unreadCount.toString(),
-                            color = Color.White,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
+                        Icon(Icons.Default.Groups, contentDescription = "Group", tint = Color.White)
+                    }
+                } else {
+                    AvatarView(name = displayName, base64 = contact.profilePicUri, size = 44)
+                }
+
+                // Beautiful glowing green online dot indicator
+                val isOnline = contact.lastSeen == "online" || contact.lastSeen == "অনলাইন"
+                if (isOnline && !contact.isGroup) {
+                    Box(
+                        modifier = Modifier
+                            .size(12.dp)
+                            .background(if (isDarkTheme) Color(0xFF0F172A) else Color.White, shape = CircleShape)
+                            .align(Alignment.BottomEnd)
+                            .padding(1.5.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color(0xFF25D366), shape = CircleShape)
                         )
                     }
                 }
             }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = displayName,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                        if (contact.isGroup) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Box(
+                                modifier = Modifier
+                                    .background(Color(0xFFE8F5E9), RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 4.dp, vertical = 2.dp)
+                            ) {
+                                Text("গ্রুপ", color = WhatsAppGreenVal, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
+                    // Display last message relative time, green and bold if unread
+                    val displayTime = if (contact.lastMessageTime > 0L) {
+                        formatRelativeTime(contact.lastMessageTime, isBn)
+                    } else {
+                        ""
+                    }
+                    val hasUnread = contact.unreadCount > 0
+                    Text(
+                        text = displayTime,
+                        color = if (hasUnread) WhatsAppGreenVal else Color.Gray,
+                        fontSize = 11.sp,
+                        fontWeight = if (hasUnread) FontWeight.Bold else FontWeight.Normal
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (contact.typingStatus.isNotEmpty()) {
+                        Text(
+                            text = "typing...",
+                            color = WhatsAppGreenVal,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    } else {
+                        val msgText = contact.lastMessageText ?: "কোনো বার্তা নেই"
+                        val isUnread = contact.unreadCount > 0
+                        Text(
+                            text = msgText,
+                            color = if (isUnread) {
+                                if (isDarkTheme) Color.White else Color.Black
+                            } else {
+                                Color.Gray
+                            },
+                            fontSize = 14.sp,
+                            fontWeight = if (isUnread) FontWeight.Bold else FontWeight.Normal,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    if (contact.unreadCount > 0) {
+                        Box(
+                            modifier = Modifier
+                                .background(WhatsAppGreenVal, shape = CircleShape)
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = contact.unreadCount.toString(),
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // WhatsApp-like options DropdownMenu
+        DropdownMenu(
+            expanded = showDropdown,
+            onDismissRequest = { showDropdown = false },
+            modifier = Modifier.background(if (isDarkTheme) Color(0xFF1E293B) else Color.White)
+        ) {
+            DropdownMenuItem(
+                text = { Text(txt("চ্যাট মুছুন", "Delete Chat"), color = Color.Red, fontWeight = FontWeight.Medium) },
+                leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = Color.Red) },
+                onClick = {
+                    showDropdown = false
+                    onDeleteChat()
+                }
+            )
+            val isArchived = sharedPrefs.getBoolean("archive_${contact.phone}", false)
+            DropdownMenuItem(
+                text = { Text(if (isArchived) txt("আর্কাইভ থেকে সরান", "Unarchive Chat") else txt("আর্কাইভ করুন", "Archive Chat"), fontWeight = FontWeight.Medium) },
+                leadingIcon = { Icon(if (isArchived) Icons.Default.Unarchive else Icons.Default.Archive, contentDescription = null, tint = WhatsAppTealVal) },
+                onClick = {
+                    showDropdown = false
+                    onToggleArchive()
+                }
+            )
+            val isBlocked = sharedPrefs.getBoolean("is_blocked_${contact.phone}", false)
+            DropdownMenuItem(
+                text = { Text(if (isBlocked) txt("আনব্লক করুন", "Unblock Contact") else txt("ব্লক করুন", "Block Contact"), fontWeight = FontWeight.Medium) },
+                leadingIcon = { Icon(if (isBlocked) Icons.Default.CheckCircle else Icons.Default.Block, contentDescription = null, tint = WhatsAppTealVal) },
+                onClick = {
+                    showDropdown = false
+                    onToggleBlock()
+                }
+            )
+        }
+    }
+}
+
+@Composable
+fun MessageActionRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    text: String,
+    iconColor: Color,
+    isDark: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        color = Color.Transparent,
+        shape = RoundedCornerShape(8.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 10.dp, horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = text,
+                tint = iconColor,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(14.dp))
+            Text(
+                text = text,
+                fontSize = 14.sp,
+                color = if (isDark) Color.LightGray else Color(0xFF334155),
+                fontWeight = FontWeight.Medium
+            )
         }
     }
 }
@@ -5299,6 +5927,13 @@ fun ChatWindowScreen(
     var showGroupManageDialog by remember { mutableStateOf(false) }
     var showPrivateManageDialog by remember { mutableStateOf(false) }
     val dialogContext = LocalContext.current
+    var nicknameUpdateTrigger by remember { mutableStateOf(0) }
+    val windowPrefs = remember(contact.phone, nicknameUpdateTrigger) {
+        dialogContext.getSharedPreferences("BartaChatPrefs", Context.MODE_PRIVATE)
+    }
+    val displayName = remember(contact.phone, nicknameUpdateTrigger) {
+        if (contact.isGroup) contact.name else (windowPrefs.getString("nickname_${contact.phone}", null)?.ifBlank { null } ?: contact.name)
+    }
     var chatWallpaper by remember(contact.phone, showPrivateManageDialog, showGroupManageDialog) {
         mutableStateOf(
             dialogContext.getSharedPreferences("BartaChatPrefs", Context.MODE_PRIVATE)
@@ -5633,13 +6268,13 @@ fun ChatWindowScreen(
                             }
                         }
                     } else {
-                        AvatarView(name = contact.name, base64 = contact.profilePicUri, size = 36)
+                        AvatarView(name = displayName, base64 = contact.profilePicUri, size = 36)
                     }
 
                     Spacer(modifier = Modifier.width(10.dp))
                     Column {
                         Text(
-                            text = contact.name,
+                            text = displayName,
                             color = Color.White,
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp
@@ -5748,6 +6383,7 @@ fun ChatWindowScreen(
                     showPrivateManageDialog = false
                     chatWallpaper = dialogContext.getSharedPreferences("BartaChatPrefs", Context.MODE_PRIVATE)
                         .getString("chat_wallpaper_${contact.phone}", "default") ?: "default"
+                    nicknameUpdateTrigger++
                 },
                 onCloseChat = onClose
             )
@@ -5901,7 +6537,7 @@ fun ChatWindowScreen(
                             Column(modifier = Modifier.padding(12.dp)) {
                                 Text(
                                     text = if (contact.phone == "01300000000" || contact.isSimulated) {
-                                        if (appLanguage == "bn") "বার্তা সহকারী ভাবছে... 🤖💭" else "Barta Assistant is thinking... 🤖💭"
+                                        if (appLanguage == "bn") "Barta Ai Chat Bot ভাবছে... 🤖💭" else "Barta Ai Chat Bot is thinking... 🤖💭"
                                     } else {
                                         if (appLanguage == "bn") "লিখছে..." else "typing..."
                                     },
@@ -6050,165 +6686,166 @@ fun ChatWindowScreen(
                 )
             }
         } else {
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(if (isDarkTheme) Color(0xFF1E293B) else Color(0xFFF0F2F5))
-                    .padding(8.dp)
-                    .navigationBarsPadding(),
-                verticalAlignment = Alignment.CenterVertically
+                    .navigationBarsPadding()
+                    .imePadding()
             ) {
-                // Text Input Card
-                Card(
-                    shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.cardColors(containerColor = if (isDarkTheme) Color(0xFF0F172A) else Color.White),
+                Row(
                     modifier = Modifier
-                        .weight(1f)
-                        .padding(end = 8.dp)
+                        .fillMaxWidth()
+                        .padding(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
+                    // Text Input Card
+                    Card(
+                        shape = RoundedCornerShape(24.dp),
+                        colors = CardDefaults.cardColors(containerColor = if (isDarkTheme) Color(0xFF0F172A) else Color.White),
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(end = 8.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (showEmojiPicker) Icons.Default.Keyboard else Icons.Default.SentimentSatisfiedAlt,
+                                contentDescription = "Emoji select",
+                                tint = if (showEmojiPicker) WhatsAppTealVal else Color.Gray,
+                                modifier = Modifier
+                                    .clickable {
+                                        focusManager.clearFocus()
+                                        showEmojiPicker = !showEmojiPicker
+                                    }
+                                    .testTag("emoji_picker_toggle_button")
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            IconButton(
+                                onClick = { showAttachOptions = !showAttachOptions },
+                                modifier = Modifier.size(28.dp).testTag("chat_attach_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AttachFile,
+                                    contentDescription = "Attach file",
+                                    tint = Color.Gray
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(4.dp))
+                            
+                            // Generate Image (Imagen) Button (Only for AI bot chats)
+                            if (contact.phone == "01300000000" || contact.isSimulated) {
+                                IconButton(
+                                    onClick = {
+                                        if (inputText.isNotBlank()) {
+                                            imageGenerationPrompt = inputText
+                                            showGenerateImageDialog = true
+                                        } else {
+                                            imageGenerationPrompt = ""
+                                            showGenerateImageDialog = true
+                                        }
+                                    },
+                                    modifier = Modifier.size(28.dp).testTag("generate_image_button")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Brush,
+                                        contentDescription = "Generate Image",
+                                        tint = WhatsAppTealVal
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(4.dp))
+                            }
+
+                            // Speech-to-Text Microphone Button
+                            IconButton(
+                                onClick = {
+                                    try {
+                                        val intent = android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                                            putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                                            putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE, java.util.Locale.getDefault())
+                                        }
+                                        speechRecognizerLauncher.launch(intent)
+                                    } catch (e: Exception) {
+                                        Toast.makeText(dialogContext, "Speech recognition not available", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                modifier = Modifier.size(28.dp).testTag("chat_mic_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Mic,
+                                    contentDescription = "Voice Input",
+                                    tint = WhatsAppTealVal
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(6.dp))
+                            
+                            BasicTextField(
+                                value = inputText,
+                                onValueChange = {
+                                    inputText = it
+                                    if (showEmojiPicker) {
+                                        showEmojiPicker = false
+                                    }
+                                },
+                                textStyle = androidx.compose.ui.text.TextStyle(
+                                    color = if (isDarkTheme) Color.White else Color.Black,
+                                    fontSize = 15.sp
+                                ),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(vertical = 10.dp)
+                                    .testTag("chat_message_input"),
+                                maxLines = 4,
+                                decorationBox = { innerTextField ->
+                                    Box(modifier = Modifier.fillMaxWidth()) {
+                                        if (inputText.isEmpty()) {
+                                            Text(
+                                                text = txt("বার্তা লিখুন...", "Type a message..."),
+                                                color = Color.Gray,
+                                                fontSize = 15.sp
+                                            )
+                                        }
+                                        innerTextField()
+                                    }
+                                }
+                            )
+                        }
+                    }
+
+                    // Send trigger capsule
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .background(WhatsAppTealVal, shape = CircleShape)
+                            .clickable {
+                                if (inputText.isNotBlank()) {
+                                    viewModel.sendMessage(inputText)
+                                    inputText = ""
+                                }
+                            }
+                            .testTag("send_message_button"),
+                        contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = if (showEmojiPicker) Icons.Default.Keyboard else Icons.Default.SentimentSatisfiedAlt,
-                            contentDescription = "Emoji select",
-                            tint = if (showEmojiPicker) WhatsAppTealVal else Color.Gray,
-                            modifier = Modifier
-                                .clickable {
-                                    focusManager.clearFocus()
-                                    showEmojiPicker = !showEmojiPicker
-                                }
-                                .testTag("emoji_picker_toggle_button")
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        IconButton(
-                            onClick = { showAttachOptions = !showAttachOptions },
-                            modifier = Modifier.size(28.dp).testTag("chat_attach_button")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.AttachFile,
-                                contentDescription = "Attach file",
-                                tint = Color.Gray
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(4.dp))
-                        
-                        // Generate Image (Imagen) Button
-                        IconButton(
-                            onClick = {
-                                if (inputText.isNotBlank()) {
-                                    imageGenerationPrompt = inputText
-                                    showGenerateImageDialog = true
-                                } else {
-                                    imageGenerationPrompt = ""
-                                    showGenerateImageDialog = true
-                                }
-                            },
-                            modifier = Modifier.size(28.dp).testTag("generate_image_button")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Brush,
-                                contentDescription = "Generate Image",
-                                tint = WhatsAppTealVal
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(4.dp))
-
-                        // Speech-to-Text Microphone Button
-                        IconButton(
-                            onClick = {
-                                try {
-                                    val intent = android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                                        putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                                        putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE, java.util.Locale.getDefault())
-                                    }
-                                    speechRecognizerLauncher.launch(intent)
-                                } catch (e: Exception) {
-                                    Toast.makeText(dialogContext, "Speech recognition not available", Toast.LENGTH_SHORT).show()
-                                }
-                            },
-                            modifier = Modifier.size(28.dp).testTag("chat_mic_button")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Mic,
-                                contentDescription = "Voice Input",
-                                tint = WhatsAppTealVal
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(4.dp))
-                        
-                        TextField(
-                            value = inputText,
-                            onValueChange = {
-                                inputText = it
-                                if (showEmojiPicker) {
-                                    showEmojiPicker = false
-                                }
-                            },
-                            placeholder = { Text("বার্তা লিখুন...", color = Color.Gray) },
-                            textStyle = androidx.compose.ui.text.TextStyle(color = if (isDarkTheme) Color.White else Color.Black, fontSize = 16.sp),
-                            colors = TextFieldDefaults.colors(
-                                focusedTextColor = if (isDarkTheme) Color.White else Color.Black,
-                                unfocusedTextColor = if (isDarkTheme) Color.White else Color.Black,
-                                focusedContainerColor = Color.Transparent,
-                                unfocusedContainerColor = Color.Transparent,
-                                focusedIndicatorColor = Color.Transparent,
-                                unfocusedIndicatorColor = Color.Transparent,
-                                focusedPlaceholderColor = Color.Gray,
-                                unfocusedPlaceholderColor = Color.Gray
-                            ),
-                            singleLine = false,
-                            maxLines = 4,
-                            keyboardOptions = KeyboardOptions(
-                                imeAction = ImeAction.Send
-                            ),
-                            keyboardActions = KeyboardActions(
-                                onSend = {
-                                    if (inputText.isNotBlank()) {
-                                        viewModel.sendMessage(inputText)
-                                        inputText = ""
-                                    }
-                                }
-                            ),
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("chat_message_input")
+                            imageVector = Icons.AutoMirrored.Filled.Send,
+                            contentDescription = "Send",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }
 
-                // Send trigger capsule
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .background(WhatsAppTealVal, shape = CircleShape)
-                        .clickable {
-                            if (inputText.isNotBlank()) {
-                                viewModel.sendMessage(inputText)
-                                inputText = ""
-                            }
+                if (showEmojiPicker) {
+                    EmojiPickerComponent(
+                        isBn = appLanguage == "bn",
+                        onEmojiSelected = { emoji ->
+                            inputText += emoji
                         }
-                        .testTag("send_message_button"),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.Send,
-                        contentDescription = "Send",
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
-        }
-
-        if (showEmojiPicker) {
-            EmojiPickerComponent(
-                isBn = appLanguage == "bn",
-                onEmojiSelected = { emoji ->
-                    inputText += emoji
-                }
-            )
         }
     }
 
@@ -6814,12 +7451,21 @@ fun ChatMsgBubble(
                                 modifier = Modifier.size(14.dp)
                             )
                         } else {
-                            Icon(
-                                imageVector = Icons.Default.DoneAll,
-                                contentDescription = "Read status",
-                                tint = Color(0xFF34B7F1),
-                                modifier = Modifier.size(14.dp)
-                            )
+                            if (message.isRead) {
+                                Icon(
+                                    imageVector = Icons.Default.DoneAll,
+                                    contentDescription = "Read status",
+                                    tint = Color(0xFF34B7F1),
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Done,
+                                    contentDescription = "Sent status",
+                                    tint = Color.Gray,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -6829,129 +7475,132 @@ fun ChatMsgBubble(
 
     // Interactive message deletion selection sheet dialog
     val txt = { bn: String, en: String -> if (isBengali) bn else en }
+    val isDarkTheme = androidx.compose.foundation.isSystemInDarkTheme()
 
     if (showDeleteConfirmationDialog) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirmationDialog = false },
-            title = { Text(txt("বার্তা সংশোধন বা মুছুন", "Modify or Delete Message"), fontWeight = FontWeight.Bold, color = WhatsAppTealVal) },
-            text = { Text(txt("বার্তাটির নিরাপত্তা নিশ্চিতকরণঃ দয়া করে আপনার কাঙ্ক্ষিত অপশনটি নির্বাচন করুন।", "Message security verification: Please select your desired option."), fontSize = 12.sp, color = Color.Gray) },
-            confirmButton = {
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+            modifier = Modifier
+                .padding(24.dp)
+                .fillMaxWidth(0.95f),
+            title = {
+                Text(
+                    text = txt("বার্তা অপশন সমূহ", "Message Options"),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = if (isDarkTheme) Color.White else Color(0xFF1E293B)
+                )
+            },
+            text = {
                 Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    // Option 1: Delete For Me (Sender + Receiver both have permission)
-                    Button(
-                        modifier = Modifier.fillMaxWidth(),
-                        onClick = {
-                            onDeleteForMe()
-                            showDeleteConfirmationDialog = false
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = WhatsAppTealVal)
-                    ) {
-                        Text(txt("আমার থেকে মুছুন", "Delete for Me"), color = Color.White)
-                    }
-
-                    // Option 2: Delete For Everyone (Only sender has full permission constraints, or Admins/Owners for moderation)
-                    if ((isMe || isAdminOrOwner) && !message.isDeletedForEveryone) {
-                        Button(
-                            modifier = Modifier.fillMaxWidth().testTag("delete_for_everyone_button"),
-                            onClick = {
-                                onDeleteForEveryone()
-                                showDeleteConfirmationDialog = false
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
-                        ) {
-                            val label = if (isMe) {
-                                txt("সবার জন্য মুছুন", "Delete for Everyone")
-                            } else {
-                                txt("বার্তা মডারেট করুন (সবার জন্য মুছুন) ⚠️", "Moderate Message (Delete for Everyone) ⚠️")
-                            }
-                            Text(label, color = Color.White)
-                        }
-                    }
-
-                    // Option 3: Edit Message (Only sender has edit constraints, only for text messages)
-                    if (isMe && !message.isDeletedForEveryone && message.mediaType == null) {
-                        Button(
-                            modifier = Modifier.fillMaxWidth().testTag("edit_message_button"),
-                            onClick = {
-                                showDeleteConfirmationDialog = false
-                                showEditDialog = true
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E88E5))
-                        ) {
-                            Text(txt("বার্তা সংশোধন করুন", "Edit Message"), color = Color.White)
-                        }
-                    }
-
-                    // Option 3.5: Pin Message (Admins/Owners with permission, in group chats)
-                    if (isGroupMsg && !message.isDeletedForEveryone && canMePinMessage && onPinMessage != null) {
-                        Button(
-                            modifier = Modifier.fillMaxWidth().testTag("pin_message_button"),
-                            onClick = {
-                                onPinMessage()
-                                showDeleteConfirmationDialog = false
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B))
-                        ) {
-                            Text(txt("বার্তা পিন করুন 📌", "Pin Message 📌"), color = Color.White)
-                        }
-                    }
-
-                    // Option 4: Copy Message Text (For everyone, for text messages)
+                    // Option 1: Copy Message Text (For everyone, for text messages)
                     if (message.mediaType == null && !message.isDeletedForEveryone) {
                         val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
                         val toastContext = androidx.compose.ui.platform.LocalContext.current
-                        Button(
-                            modifier = Modifier.fillMaxWidth().testTag("copy_message_button"),
-                            onClick = {
-                                clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(message.text))
-                                showDeleteConfirmationDialog = false
-                                Toast.makeText(toastContext, txt("বার্তা কপি করা হয়েছে!", "Message copied successfully!"), Toast.LENGTH_SHORT).show()
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4B5563))
+                        MessageActionRow(
+                            icon = Icons.Default.ContentCopy,
+                            text = txt("বার্তা কপি করুন", "Copy Message Text"),
+                            iconColor = WhatsAppTealVal,
+                            isDark = isDarkTheme
                         ) {
-                            Text(txt("বার্তা কপি করুন", "Copy Message Text"), color = Color.White)
+                            clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(message.text))
+                            showDeleteConfirmationDialog = false
+                            Toast.makeText(toastContext, txt("বার্তা কপি করা হয়েছে!", "Message copied successfully!"), Toast.LENGTH_SHORT).show()
                         }
                     }
 
-                    // Option 5: Regenerate AI Response (Only for non-deleted chatbot assistant responses)
-                    if (onRegenerate != null && !isMe && !message.isDeletedForEveryone) {
-                        Button(
-                            modifier = Modifier.fillMaxWidth().testTag("regenerate_response_button"),
-                            onClick = {
-                                onRegenerate()
-                                showDeleteConfirmationDialog = false
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = WhatsAppTealVal)
+                    // Option 2: Edit Message (Only sender has edit constraints, only for text messages)
+                    if (isMe && !message.isDeletedForEveryone && message.mediaType == null) {
+                        MessageActionRow(
+                            icon = Icons.Default.Edit,
+                            text = txt("বার্তা সংশোধন করুন", "Edit Message"),
+                            iconColor = Color(0xFF1E88E5),
+                            isDark = isDarkTheme
                         ) {
-                            Text(txt("এআই উত্তর পুনরায় তৈরি করুন", "Regenerate Response"), color = Color.White)
+                            showDeleteConfirmationDialog = false
+                            showEditDialog = true
                         }
                     }
 
-                    // Option 6: Forward Message (Available for all non-deleted messages)
-                    if (!message.isDeletedForEveryone) {
-                        Button(
-                            modifier = Modifier.fillMaxWidth().testTag("forward_message_button"),
-                            onClick = {
-                                showDeleteConfirmationDialog = false
-                                onForward(message)
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F9D58))
-                        ) {
-                            Text(txt("বার্তা এগিয়ে দিন (Forward)", "Forward Message"), color = Color.White)
-                        }
-                    }
-
-                    // Cancel option
-                    OutlinedButton(
-                        modifier = Modifier.fillMaxWidth().testTag("cancel_message_options_button"),
-                        onClick = { showDeleteConfirmationDialog = false }
+                    // Option 3: Delete For Me (Sender + Receiver both have permission)
+                    MessageActionRow(
+                        icon = Icons.Default.Delete,
+                        text = txt("আমার থেকে মুছুন", "Delete for Me"),
+                        iconColor = WhatsAppTealVal,
+                        isDark = isDarkTheme
                     ) {
-                        Text(txt("বাতিল করুন", "Cancel"))
+                        onDeleteForMe()
+                        showDeleteConfirmationDialog = false
                     }
+
+                    // Option 4: Delete For Everyone (Only sender has full permission constraints, or Admins/Owners for moderation)
+                    if ((isMe || isAdminOrOwner) && !message.isDeletedForEveryone) {
+                        val label = if (isMe) {
+                            txt("সবার জন্য মুছুন", "Delete for Everyone")
+                        } else {
+                            txt("বার্তা মডারেট করুন (সবার জন্য মুছুন) ⚠️", "Moderate Message (Delete for Everyone) ⚠️")
+                        }
+                        MessageActionRow(
+                            icon = Icons.Default.Delete,
+                            text = label,
+                            iconColor = Color.Red,
+                            isDark = isDarkTheme
+                        ) {
+                            onDeleteForEveryone()
+                            showDeleteConfirmationDialog = false
+                        }
+                    }
+
+                    // Option 5: Pin Message (Admins/Owners with permission, in group chats)
+                    if (isGroupMsg && !message.isDeletedForEveryone && canMePinMessage && onPinMessage != null) {
+                        MessageActionRow(
+                            icon = Icons.Default.PushPin,
+                            text = txt("বার্তা পিন করুন 📌", "Pin Message 📌"),
+                            iconColor = Color(0xFFF59E0B),
+                            isDark = isDarkTheme
+                        ) {
+                            onPinMessage()
+                            showDeleteConfirmationDialog = false
+                        }
+                    }
+
+                    // Option 6: Regenerate AI Response (Only for non-deleted chatbot assistant responses)
+                    if (onRegenerate != null && !isMe && !message.isDeletedForEveryone) {
+                        MessageActionRow(
+                            icon = Icons.Default.Refresh,
+                            text = txt("এআই উত্তর পুনরায় তৈরি করুন", "Regenerate AI Response"),
+                            iconColor = WhatsAppTealVal,
+                            isDark = isDarkTheme
+                        ) {
+                            onRegenerate()
+                            showDeleteConfirmationDialog = false
+                        }
+                    }
+
+                    // Option 7: Forward Message (Available for all non-deleted messages)
+                    if (!message.isDeletedForEveryone) {
+                        MessageActionRow(
+                            icon = Icons.Default.ArrowForward,
+                            text = txt("বার্তা এগিয়ে দিন (Forward)", "Forward Message"),
+                            iconColor = Color(0xFF0F9D58),
+                            isDark = isDarkTheme
+                        ) {
+                            showDeleteConfirmationDialog = false
+                            onForward(message)
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirmationDialog = false }) {
+                    Text(txt("বাতিল করুন", "Cancel"), color = Color.Gray, fontWeight = FontWeight.Bold)
                 }
             }
         )
@@ -7078,12 +7727,36 @@ fun AvatarView(
                     contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
                 )
-            } else {
+            } else if (base64.startsWith("pic")) {
                 Image(
                     imageVector = getAvatarVector(base64),
                     contentDescription = name,
                     modifier = Modifier.fillMaxSize()
                 )
+            } else {
+                val bitmap = remember(base64) {
+                    try {
+                        val cleaned = base64.substringAfter("base64,")
+                        val decodedBytes = android.util.Base64.decode(cleaned, android.util.Base64.DEFAULT)
+                        android.graphics.BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.size)
+                    } catch (e: Exception) {
+                        null
+                    }
+                }
+                if (bitmap != null) {
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = name,
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Image(
+                        imageVector = Icons.Default.AccountCircle,
+                        contentDescription = name,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
             }
         }
     } else {
@@ -8255,7 +8928,7 @@ fun ManagePrivateChatDialog(
 
     val bioText = remember(contact.phone) {
         if (contact.phone == "01300000000") {
-            txt("আমি একটি এআই চ্যাট সহকারী রোবট। আপনার যেকোনো প্রশ্নের উত্তর দিতে প্রস্তুত! 🤖✨", "I am an AI Chatbot Assistant. Ready to help with any query! 🤖✨")
+            txt("আমি Barta Ai Chat Bot। আপনার যেকোনো প্রশ্নের উত্তর দিতে প্রস্তুত! 🤖✨", "I am Barta Ai Chat Bot. Ready to help with any query! 🤖✨")
         } else {
             sharedPrefs.getString("bio_${contact.phone}", "")?.ifEmpty {
                 txt("বার্তা অ্যাপ ব্যবহার করছি! 📱✨", "Busy or sleeping. ✨")
@@ -8370,13 +9043,17 @@ fun ManagePrivateChatDialog(
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
                                 // Profile Pic
+                                val storedNickname = remember(contact.phone) { sharedPrefs.getString("nickname_${contact.phone}", "") ?: "" }
+                                var localNickname by remember(contact.phone) { mutableStateOf(storedNickname) }
+                                val activeDisplayName = if (localNickname.isNotBlank()) localNickname else contact.name
+
                                 Box(
                                     modifier = Modifier
                                         .size(110.dp)
                                         .clickable { showFullProfilePic = true },
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    AvatarView(name = contact.name, base64 = contact.profilePicUri, size = 100)
+                                    AvatarView(name = activeDisplayName, base64 = contact.profilePicUri, size = 100)
                                     Box(
                                         modifier = Modifier
                                             .size(28.dp)
@@ -8390,7 +9067,59 @@ fun ManagePrivateChatDialog(
                                 }
 
                                 Spacer(modifier = Modifier.height(12.dp))
-                                Text(contact.name, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                var isEditingNickname by remember { mutableStateOf(false) }
+
+                                if (isEditingNickname) {
+                                    OutlinedTextField(
+                                        value = localNickname,
+                                        onValueChange = { localNickname = it },
+                                        label = { Text(txt("কাস্টম নাম দিন (Custom Name)", "Enter Custom Name"), color = WhatsAppTealVal) },
+                                        singleLine = true,
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedTextColor = Color.White,
+                                            unfocusedTextColor = Color.White,
+                                            focusedBorderColor = WhatsAppTealVal,
+                                            unfocusedBorderColor = Color.Gray
+                                        ),
+                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp).testTag("custom_nickname_input")
+                                    )
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                        modifier = Modifier.padding(top = 4.dp)
+                                    ) {
+                                        Button(
+                                            onClick = {
+                                                sharedPrefs.edit().putString("nickname_${contact.phone}", localNickname).apply()
+                                                isEditingNickname = false
+                                                Toast.makeText(context, txt("কাস্টম নাম সফলভাবে আপডেট হয়েছে!", "Custom name successfully updated!"), Toast.LENGTH_SHORT).show()
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = WhatsAppGreenVal),
+                                            modifier = Modifier.testTag("custom_nickname_save_btn")
+                                        ) {
+                                            Text(txt("সেভ", "Save"), color = Color.White)
+                                        }
+                                        OutlinedButton(
+                                            onClick = {
+                                                isEditingNickname = false
+                                                localNickname = storedNickname
+                                            },
+                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.LightGray)
+                                        ) {
+                                            Text(txt("বাতিল", "Cancel"))
+                                        }
+                                    }
+                                } else {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(activeDisplayName, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        IconButton(onClick = { isEditingNickname = true }, modifier = Modifier.size(24.dp).testTag("custom_nickname_edit_btn")) {
+                                            Icon(Icons.Default.Edit, contentDescription = "Edit Name", tint = WhatsAppTealVal, modifier = Modifier.size(16.dp))
+                                        }
+                                    }
+                                    if (localNickname.isNotBlank()) {
+                                        Text(txt("আসল নাম: ${contact.name}", "Original Name: ${contact.name}"), fontSize = 12.sp, color = Color.Gray)
+                                    }
+                                }
                                 Text(contact.phone, fontSize = 14.sp, color = Color.Gray)
 
                                 // Status / Presence indicator

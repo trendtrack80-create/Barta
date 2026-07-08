@@ -10,6 +10,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.room.Room
 import com.example.data.*
+import com.example.notification.NotificationHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
@@ -20,11 +21,7 @@ import kotlinx.coroutines.withContext
 
 class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val context = application.applicationContext
-    private val db = Room.databaseBuilder(
-        context,
-        ChatDatabase::class.java,
-        "barta_chat_database"
-    ).fallbackToDestructiveMigration().build()
+    private val db = ChatDatabase.getInstance(context)
 
     private val repository = ChatRepository(db.contactDao(), db.messageDao(), db.userDao(), db.statusDao(), context)
     private val sharedPrefs = context.getSharedPreferences("BartaChatPrefs", Context.MODE_PRIVATE)
@@ -283,6 +280,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _myNumber.collect { me ->
                 if (me != null) {
+                    registerFcmToken(me)
                     // One-time cleanup of existing groups as requested by user
                     val hasCleared = sharedPrefs.getBoolean("has_cleared_old_groups_v1", false)
                     if (!hasCleared) {
@@ -381,9 +379,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         repository.markStatusAsViewed(statusId, currentViewers)
     }
 
-    fun register(phone: String, name: String, password: String, profilePic: String, callback: (String?) -> Unit) {
+    fun register(phone: String, name: String, email: String, password: String, profilePic: String, callback: (String?) -> Unit) {
         val cleanPhone = phone.trim()
         val cleanName = name.trim()
+        val cleanEmail = email.trim()
         val cleanPass = password.trim()
         val isBn = appLanguage.value == "bn"
 
@@ -395,25 +394,25 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             callback(if (isBn) "দয়া করে সঠিক ১১ ডিজিটের বাংলাদেশ নাম্বার দিন!" else "Please provide a valid 11-digit Bangladeshi number!")
             return
         }
-        if (cleanPass.length < 6 || cleanPass.length > 8) {
-            callback(if (isBn) "পাসওয়ার্ড অবশ্যই ৬ থেকে ৮ অক্ষরের মাঝে হতে হবে!" else "Password must be between 6 and 8 characters long!")
+        if (cleanEmail.isEmpty() || !cleanEmail.contains("@") || !cleanEmail.contains(".")) {
+            callback(if (isBn) "দয়া করে সঠিক ইমেইল এড্রেস দিন!" else "Please provide a valid email address!")
+            return
+        }
+        if (cleanPass.length < 6) {
+            callback(if (isBn) "পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে!" else "Password must be at least 6 characters long!")
             return
         }
 
         viewModelScope.launch {
-            val exists = repository.getUserByPhone(cleanPhone)
-            val existsInFirestore = repository.getUserFromFirestore(cleanPhone)
-            if (exists != null || existsInFirestore != null) {
-                callback(if (isBn) "এই কন্ট্যাক্ট নাম্বার দিয়ে ইতিমধ্যে অ্যাকাউন্ট তৈরি হয়েছে!" else "An account with this phone number already exists!")
-            } else {
-                val registered = repository.registerLocalUser(cleanPhone, cleanName, cleanPass, profilePic)
-                if (registered) {
-                    sharedPrefs.edit()
-                        .putString("logged_user_phone", cleanPhone)
-                        .putString("logged_user_display_name", cleanName)
-                        .putString("logged_user_profile_pic", profilePic)
-                        .putString("logged_user_status_message", "বার্তা (Chat) ব্যবহার করছি!")
-                        .apply()
+            if (isFirebaseConfigured.value) {
+                val error = repository.registerWithFirebaseAuth(
+                    phone = cleanPhone,
+                    name = cleanName,
+                    email = cleanEmail,
+                    passwordHash = cleanPass,
+                    profilePicBase64 = profilePic
+                )
+                if (error == null) {
                     seedDummyContacts()
                     showOnboarding.value = true
                     _myNumber.value = cleanPhone
@@ -422,72 +421,114 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     userStatusMessage.value = "বার্তা (Chat) ব্যবহার করছি!"
                     callback(null)
                 } else {
-                    callback(if (isBn) "রেজিস্ট্রেশন ব্যর্থ হয়েছে।" else "Registration failed.")
+                    callback(error)
+                }
+            } else {
+                // Local only fallback
+                val exists = repository.getUserByPhone(cleanPhone)
+                if (exists != null) {
+                    callback(if (isBn) "এই কন্ট্যাক্ট নাম্বার দিয়ে ইতিমধ্যে অ্যাকাউন্ট তৈরি হয়েছে!" else "An account with this phone number already exists!")
+                } else {
+                    val registered = repository.registerLocalUser(cleanPhone, cleanName, cleanPass, profilePic)
+                    if (registered) {
+                        sharedPrefs.edit()
+                            .putString("logged_user_phone", cleanPhone)
+                            .putString("logged_user_display_name", cleanName)
+                            .putString("logged_user_profile_pic", profilePic)
+                            .putString("logged_user_status_message", "বার্তা (Chat) ব্যবহার করছি!")
+                            .apply()
+                        seedDummyContacts()
+                        showOnboarding.value = true
+                        _myNumber.value = cleanPhone
+                        userDisplayName.value = cleanName
+                        userProfilePicBase64.value = profilePic
+                        userStatusMessage.value = "বার্তা (Chat) ব্যবহার করছি!"
+                        callback(null)
+                    } else {
+                        callback(if (isBn) "রেজিস্ট্রেশন ব্যর্থ হয়েছে।" else "Registration failed.")
+                    }
                 }
             }
         }
     }
 
-    fun loginWithPassword(phone: String, pass: String, callback: (String?) -> Unit) {
-        val cleanPhone = phone.trim()
+    fun loginWithPassword(emailOrPhone: String, pass: String, callback: (String?) -> Unit) {
+        val cleanInput = emailOrPhone.trim()
         val cleanPass = pass.trim()
         val isBn = appLanguage.value == "bn"
 
-        if (cleanPhone.length != 11 || !cleanPhone.startsWith("01")) {
-            callback(if (isBn) "মোবাইল নাম্বারটি অবশ্যই ১১ ডিজিটের হতে হবে!" else "Mobile number must be exactly 11 digits!")
+        if (cleanInput.isEmpty()) {
+            callback(if (isBn) "দয়া করে মোবাইল নাম্বার অথবা ইমেইল দিন!" else "Please provide an email or phone number!")
             return
         }
-        if (cleanPass.length < 6 || cleanPass.length > 8) {
-            callback(if (isBn) "পাসওয়ার্ড অবশ্যই ৬ থেকে ৮ অক্ষরের হতে হবে!" else "Password must be between 6 and 8 characters!")
+        if (cleanPass.length < 6) {
+            callback(if (isBn) "পাসওয়ার্ড অবশ্যই কমপক্ষে ৬ অক্ষরের হতে হবে!" else "Password must be at least 6 characters!")
             return
         }
 
         viewModelScope.launch {
-            var user = repository.getUserByPhone(cleanPhone)
-            if (user == null) {
-                // If not found in local DB, fetch from Firestore to see if they registered previously
-                val firestoreUser = repository.getUserFromFirestore(cleanPhone)
-                if (firestoreUser != null) {
-                    val fsPassword = firestoreUser["passwordHash"] as? String ?: ""
-                    if (fsPassword.isNotEmpty() && fsPassword == cleanPass) {
-                        val name = firestoreUser["name"] as? String ?: "ব্যবহারকারী"
-                        val status = firestoreUser["status"] as? String ?: "বার্তা (Chat) ব্যবহার করছি!"
-                        val pic = firestoreUser["profilePicBase64"] as? String ?: ""
-                        
-                        val newUser = com.example.data.LocalUser(cleanPhone, name, cleanPass, pic, status)
-                        repository.insertLocalUserDirectly(newUser)
-                        user = newUser
-                    } else if (fsPassword.isNotEmpty() && fsPassword != cleanPass) {
-                        callback(if (isBn) "ভুল পাসওয়ার্ড! দয়া করে সঠিক পাসওয়ার্ড দিন।" else "Incorrect password! Please try again.")
-                        return@launch
-                    } else {
-                        // Document exists but no passwordHash saved (legacy user). Let's allow creating local user check or show specific msg
-                        callback(if (isBn) "এই নাম্বার দিয়ে কোনো সম্পূর্ণ অ্যাকাউন্ট পাওয়া যায়নি বা পাসওয়ার্ড মেলেনি।" else "No complete account found with this number or password mismatch.")
-                        return@launch
-                    }
+            if (isFirebaseConfigured.value) {
+                val error = repository.loginWithFirebaseAuth(cleanInput, cleanPass)
+                if (error == null) {
+                    val phone = sharedPrefs.getString("logged_user_phone", "") ?: ""
+                    val name = sharedPrefs.getString("logged_user_display_name", "") ?: ""
+                    val pic = sharedPrefs.getString("logged_user_profile_pic", "") ?: ""
+                    val status = sharedPrefs.getString("logged_user_status_message", "") ?: "বার্তা (Chat) ব্যবহার করছি!"
+                    
+                    _myNumber.value = phone
+                    userDisplayName.value = name
+                    userProfilePicBase64.value = pic
+                    userStatusMessage.value = status
+                    seedDummyContacts()
+                    callback(null)
                 } else {
-                    callback(if (isBn) "এই নাম্বার দিয়ে কোনো অ্যাকাউন্ট পাওয়া যায়নি! রেজিস্ট্রেশন করুন।" else "No account found with this number! Please register.")
+                    callback(error)
+                }
+            } else {
+                // Local only high-fidelity offline backup flow
+                val isEmail = cleanInput.contains("@")
+                if (isEmail) {
+                    callback(if (isBn) "অফলাইন মোডে ইমেইল দিয়ে লগইন করা সম্ভব নয়। দয়া করে মোবাইল নাম্বার ব্যবহার করুন।" else "Cannot login with email in offline mode. Please use your phone number.")
                     return@launch
                 }
-            }
-
-            if (user != null) {
+                var user = repository.getUserByPhone(cleanInput)
+                if (user == null) {
+                    callback(if (isBn) "অ্যাকাউন্ট পাওয়া যায়নি! অফলাইনে নতুন একাউন্ট তৈরি করুন।" else "No local account found! Please register.")
+                    return@launch
+                }
                 if (user.passwordHash != cleanPass) {
-                    callback(if (isBn) "ভুল পাসওয়ার্ড! দয়া করে সঠিক পাসওয়ার্ড দিন।" else "Incorrect password! Please try again.")
+                    callback(if (isBn) "ভুল পাসওয়ার্ড! আবার চেষ্টা করুন।" else "Incorrect password! Please try again.")
                 } else {
                     sharedPrefs.edit()
-                        .putString("logged_user_phone", cleanPhone)
+                        .putString("logged_user_phone", cleanInput)
                         .putString("logged_user_display_name", user.name)
                         .putString("logged_user_profile_pic", user.profilePicBase64)
                         .putString("logged_user_status_message", user.status)
                         .apply()
-                    _myNumber.value = cleanPhone
+                    _myNumber.value = cleanInput
                     userDisplayName.value = user.name
                     userProfilePicBase64.value = user.profilePicBase64
                     userStatusMessage.value = user.status
                     seedDummyContacts()
                     callback(null)
                 }
+            }
+        }
+    }
+
+    fun sendPasswordReset(email: String, callback: (String?) -> Unit) {
+        val cleanEmail = email.trim()
+        val isBn = appLanguage.value == "bn"
+        if (cleanEmail.isEmpty() || !cleanEmail.contains("@") || !cleanEmail.contains(".")) {
+            callback(if (isBn) "দয়া করে সঠিক ইমেইল এড্রেস দিন!" else "Please provide a valid email address!")
+            return
+        }
+        viewModelScope.launch {
+            if (isFirebaseConfigured.value) {
+                val error = repository.sendPasswordResetEmail(cleanEmail)
+                callback(error)
+            } else {
+                callback(if (isBn) "ফায়ারবেস কনফিগার করা নেই।" else "Firebase is not configured.")
             }
         }
     }
@@ -594,6 +635,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         if (contact != null && me != null) {
             viewModelScope.launch {
                 repository.updateUnreadCount(contact.phone, 0)
+                NotificationHelper.dismissNotification(context, contact.phone)
             }
             if (!contact.isSimulated && isFirebaseConfigured.value) {
                 repository.startListeningToChat(me, contact.phone) {
@@ -1027,7 +1069,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         if (existing == 0) {
             val dummy3 = Contact(
                 phone = "01300000000",
-                name = "বার্তা সহকারী (Bot) 🤖",
+                name = "Barta Ai Chat Bot",
                 isSimulated = true,
                 lastSeen = "online",
                 lastMessageText = "যেকোনো প্রশ্নের উত্তর দিতে আমি এখানে আছি!",
@@ -1039,7 +1081,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             val dummyStatus3 = ChatStatus(
                 id = "dummy_status_3",
                 phone = "01300000000",
-                name = "বার্তা সহকারী (Bot) 🤖",
+                name = "Barta Ai Chat Bot",
                 avatar = "",
                 text = "আমি আপনাদের প্রশ্নের উত্তর দিতে প্রস্তুত! যেকোনো প্রশ্ন করুন। 💡",
                 timestamp = System.currentTimeMillis() - 7200000L,
@@ -1158,7 +1200,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         )
                         resultList.add(synced)
 
-                        // Automatically sync to local Room database so they are in our chat list
+                        // Automatically sync to local Room database so they are in our database but not shown in Chats list initially
                         val existingContact = currentLocalContacts.find { it.phone == phoneKey }
                         if (existingContact == null) {
                             val newContact = Contact(
@@ -1166,8 +1208,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                                 name = deviceName.ifEmpty { appName },
                                 isSimulated = false,
                                 lastSeen = "online",
-                                lastMessageText = "চ্যাট আরম্ভ করতে বার্তা পাঠান...",
-                                lastMessageTime = System.currentTimeMillis(),
+                                lastMessageText = null,
+                                lastMessageTime = 0L,
                                 profilePicUri = profilePic
                             )
                             repository.addContact(newContact)
@@ -1256,5 +1298,74 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         repository.stopListeningToStatuses()
         repository.stopAllMessageListeners()
         repository.stopListeningToUserPresence()
+    }
+
+    fun openChatByPhone(phone: String) {
+        viewModelScope.launch {
+            val contact = db.contactDao().getContactByPhone(phone)
+            if (contact != null) {
+                selectContact(contact)
+            } else {
+                val isGroup = phone.startsWith("group_")
+                val isAi = phone == "01300000000"
+                val name = if (isAi) "বার্তা এআই সহকারী (AI)" else if (isGroup) "গ্রুপ (Group)" else phone
+                val newContact = Contact(
+                    phone = phone,
+                    name = name,
+                    isSimulated = isAi,
+                    lastSeen = "online",
+                    lastMessageText = null,
+                    lastMessageTime = System.currentTimeMillis(),
+                    profilePicUri = "",
+                    isGroup = isGroup
+                )
+                db.contactDao().insertContact(newContact)
+                selectContact(newContact)
+            }
+        }
+    }
+
+    fun registerFcmToken(me: String) {
+        viewModelScope.launch {
+            try {
+                com.google.firebase.messaging.FirebaseMessaging.getInstance().token
+                    .addOnCompleteListener { task ->
+                        if (!task.isSuccessful) {
+                            Log.w("BartaChat", "Fetching FCM registration token failed", task.exception)
+                            return@addOnCompleteListener
+                        }
+                        val token = task.result
+                        Log.d("BartaChat", "FCM Token: $token")
+                        
+                        sharedPrefs.edit().putString("fcm_token", token).apply()
+                        
+                        if (isFirebaseConfigured.value) {
+                            repository.initializeFirebaseIfConfigured()
+                            val firestore = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                            val data = hashMapOf<String, Any>("fcmToken" to token)
+                            firestore.collection("users").document(me)
+                                .set(data, com.google.firebase.firestore.SetOptions.merge())
+                                .addOnSuccessListener {
+                                    Log.d("BartaChat", "FCM Token successfully synced to Firestore!")
+                                }
+                                .addOnFailureListener { e ->
+                                    Log.e("BartaChat", "FCM Token sync failed", e)
+                                }
+                        }
+                    }
+            } catch (e: Exception) {
+                Log.e("BartaChat", "Error getting/saving FCM Token", e)
+            }
+        }
+    }
+
+    fun clearAllFirebaseDataAndReset(onComplete: (String?) -> Unit) {
+        viewModelScope.launch {
+            val result = repository.clearAllFirebaseDataAndReset()
+            if (result == null) {
+                logout()
+            }
+            onComplete(result)
+        }
     }
 }

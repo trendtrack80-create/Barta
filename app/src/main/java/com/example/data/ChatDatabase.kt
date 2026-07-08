@@ -1,5 +1,6 @@
 package com.example.data
 
+import android.content.Context
 import androidx.room.*
 import kotlinx.coroutines.flow.Flow
 
@@ -41,11 +42,17 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE ((senderId = :user1 AND receiverId = :user2) OR (senderId = :user2 AND receiverId = :user1) OR (receiverId = :user2 AND :user2 LIKE 'group_%')) AND isDeletedForMe = 0 ORDER BY timestamp ASC")
     fun getMessagesForChat(user1: String, user2: String): Flow<List<Message>>
 
+    @Query("SELECT * FROM messages WHERE ((senderId = :user1 AND receiverId = :user2) OR (senderId = :user2 AND receiverId = :user1) OR (receiverId = :user2 AND :user2 LIKE 'group_%')) AND isDeletedForMe = 0 ORDER BY timestamp DESC LIMIT :limit")
+    suspend fun getRecentMessagesForChat(user1: String, user2: String, limit: Int): List<Message>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMessage(message: Message)
 
     @Query("DELETE FROM messages WHERE (senderId = :user1 AND receiverId = :user2) OR (senderId = :user2 AND receiverId = :user1) OR (receiverId = :user2 AND :user2 LIKE 'group_%')")
     suspend fun deleteMessagesForChat(user1: String, user2: String)
+
+    @Query("DELETE FROM messages")
+    suspend fun deleteAllMessages()
 
     @Query("UPDATE messages SET isDeletedForMe = 1 WHERE id = :msgId")
     suspend fun markDeletedForMe(msgId: String)
@@ -79,6 +86,9 @@ interface UserDao {
 
     @Update
     suspend fun updateUser(user: LocalUser)
+
+    @Query("DELETE FROM local_users")
+    suspend fun deleteAllUsers()
 }
 
 @Dao
@@ -97,6 +107,9 @@ interface StatusDao {
 
     @Query("DELETE FROM statuses WHERE id = :statusId")
     suspend fun deleteStatusById(statusId: String)
+
+    @Query("DELETE FROM statuses")
+    suspend fun deleteAllStatuses()
 }
 
 @Database(entities = [Contact::class, Message::class, LocalUser::class, ChatStatus::class], version = 6, exportSchema = false)
@@ -105,4 +118,23 @@ abstract class ChatDatabase : RoomDatabase() {
     abstract fun messageDao(): MessageDao
     abstract fun userDao(): UserDao
     abstract fun statusDao(): StatusDao
+
+    companion object {
+        @Volatile
+        private var INSTANCE: ChatDatabase? = null
+
+        fun getInstance(context: Context): ChatDatabase {
+            return INSTANCE ?: synchronized(this) {
+                val instance = Room.databaseBuilder(
+                    context.applicationContext,
+                    ChatDatabase::class.java,
+                    "barta_chat_database"
+                )
+                .fallbackToDestructiveMigration()
+                .build()
+                INSTANCE = instance
+                instance
+            }
+        }
+    }
 }

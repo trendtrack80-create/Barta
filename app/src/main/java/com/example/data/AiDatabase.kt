@@ -78,6 +78,9 @@ interface AiMessageDao {
     @Query("UPDATE ai_messages SET isLiked = :isLiked, isDisliked = :isDisliked WHERE id = :id")
     suspend fun updateFeedback(id: String, isLiked: Boolean, isDisliked: Boolean)
 
+    @Query("UPDATE ai_messages SET text = :text WHERE id = :id")
+    suspend fun updateMessageText(id: String, text: String)
+
     @Query("DELETE FROM ai_messages WHERE sessionId = :sessionId")
     suspend fun deleteMessagesForSession(sessionId: String)
 }
