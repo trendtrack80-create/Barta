@@ -29,9 +29,7 @@ object GeminiService {
         val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
         val activeNetwork = connectivityManager.activeNetwork ?: return false
         val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork) ?: return false
-        val hasInternet = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-        val hasValidated = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-        return hasInternet && hasValidated
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 
     /**
@@ -48,9 +46,9 @@ object GeminiService {
         val isBn = language == "bn"
         if (!isInternetAvailable(context)) {
             return if (isBn) {
-                "লিমিট শেষ"
+                "দুঃখিত, কোনো ইন্টারনেট সংযোগ নেই। অনুগ্রহ করে আপনার ওয়াই-ফাই বা মোবাইল ডাটা চালু করুন এবং আবার চেষ্টা করুন।"
             } else {
-                "Limit reached"
+                "Sorry, no internet connection detected. Please enable your Wi-Fi or mobile data and try again."
             }
         }
 
@@ -69,7 +67,7 @@ object GeminiService {
         }
 
         // Direct secure REST API call fallback
-        return callDirectGeminiApi(userMessage, previousMessages, language)
+        return callDirectGeminiApi(userPhone, userMessage, previousMessages, language)
     }
 
     /**
@@ -130,6 +128,7 @@ object GeminiService {
      * Direct REST call of gemini-2.5-flash as mandated for secure-fallback configuration
      */
     private fun callDirectGeminiApi(
+        userPhone: String,
         userMessage: String,
         previousMessages: List<Message>,
         language: String
@@ -137,9 +136,9 @@ object GeminiService {
         val apiKey = BuildConfig.GEMINI_API_KEY
         if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") {
             return if (language == "bn") {
-                "লিমিট শেষ"
+                "দুঃখিত, এআই সহকারীর লিমিট শেষ বা এপিআই কী সেট করা নেই।"
             } else {
-                "Limit reached"
+                "Sorry, the AI Assistant limit has been reached or the API Key is not set."
             }
         }
 
@@ -148,7 +147,7 @@ object GeminiService {
         // Feed conversation history inside Google contents schema with strict role alternation
         val recentHistory = previousMessages.sortedBy { it.timestamp }.takeLast(15)
         val allRawMessages = recentHistory.map { msg ->
-            val role = if (msg.senderId == "01300000000") "model" else "user"
+            val role = if (msg.senderId == "01300000000" || msg.senderId != userPhone) "model" else "user"
             role to msg.text
         }.toMutableList()
 

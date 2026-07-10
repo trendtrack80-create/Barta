@@ -242,6 +242,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     val userDisplayName = MutableStateFlow("")
     val userStatusMessage = MutableStateFlow("")
     val userProfilePicBase64 = MutableStateFlow("")
+    val userEmail = MutableStateFlow("")
 
     // Global name search of users in DB
     private val _searchedGlobalUsers = MutableStateFlow<List<LocalUser>>(emptyList())
@@ -252,6 +253,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         userDisplayName.value = sharedPrefs.getString("logged_user_display_name", "") ?: ""
         userStatusMessage.value = sharedPrefs.getString("logged_user_status_message", "বার্তা (Chat) ব্যবহার করছি!") ?: ""
         userProfilePicBase64.value = sharedPrefs.getString("logged_user_profile_pic", "") ?: ""
+        userEmail.value = sharedPrefs.getString("logged_user_email", "") ?: ""
         lastSeenPrivacy.value = sharedPrefs.getString("last_seen_privacy", "Everyone") ?: "Everyone"
         startMonitoringConnectivityAndPresence()
         loadFirebaseConfig()
@@ -386,6 +388,11 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         val cleanPass = password.trim()
         val isBn = appLanguage.value == "bn"
 
+        if (!repository.isNetworkAvailable()) {
+            callback(if (isBn) "অ্যাকাউন্ট তৈরি করতে একটি সচল ইন্টারনেট সংযোগ প্রয়োজন। অনুগ্রহ করে আপনার ওয়াই-ফাই বা মোবাইল ডাটা চালু করুন।" else "An active internet connection is required to create an account. Please enable your Wi-Fi or mobile data.")
+            return
+        }
+
         if (cleanName.isEmpty()) {
             callback(if (isBn) "অ্যাকাউন্ট তৈরির সময় সবার একটা নাম দিতে হবে!" else "Please provide a name to create an account!")
             return
@@ -394,10 +401,17 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             callback(if (isBn) "দয়া করে সঠিক ১১ ডিজিটের বাংলাদেশ নাম্বার দিন!" else "Please provide a valid 11-digit Bangladeshi number!")
             return
         }
-        if (cleanEmail.isEmpty() || !cleanEmail.contains("@") || !cleanEmail.contains(".")) {
-            callback(if (isBn) "দয়া করে সঠিক ইমেইল এড্রেস দিন!" else "Please provide a valid email address!")
-            return
+        
+        val finalEmail = if (cleanEmail.isEmpty()) {
+            "${cleanPhone}@bartachat.com"
+        } else {
+            if (!cleanEmail.contains("@") || !cleanEmail.contains(".")) {
+                callback(if (isBn) "দয়া করে সঠিক ইমেইল এড্রেস দিন!" else "Please provide a valid email address!")
+                return
+            }
+            cleanEmail.lowercase()
         }
+
         if (cleanPass.length < 6) {
             callback(if (isBn) "পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে!" else "Password must be at least 6 characters long!")
             return
@@ -408,7 +422,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 val error = repository.registerWithFirebaseAuth(
                     phone = cleanPhone,
                     name = cleanName,
-                    email = cleanEmail,
+                    email = finalEmail,
                     passwordHash = cleanPass,
                     profilePicBase64 = profilePic
                 )
@@ -419,6 +433,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     userDisplayName.value = cleanName
                     userProfilePicBase64.value = profilePic
                     userStatusMessage.value = "বার্তা (Chat) ব্যবহার করছি!"
+                    userEmail.value = finalEmail
                     callback(null)
                 } else {
                     callback(error)
@@ -436,6 +451,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                             .putString("logged_user_display_name", cleanName)
                             .putString("logged_user_profile_pic", profilePic)
                             .putString("logged_user_status_message", "বার্তা (Chat) ব্যবহার করছি!")
+                            .putString("logged_user_email", finalEmail)
                             .apply()
                         seedDummyContacts()
                         showOnboarding.value = true
@@ -443,6 +459,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         userDisplayName.value = cleanName
                         userProfilePicBase64.value = profilePic
                         userStatusMessage.value = "বার্তা (Chat) ব্যবহার করছি!"
+                        userEmail.value = finalEmail
                         callback(null)
                     } else {
                         callback(if (isBn) "রেজিস্ট্রেশন ব্যর্থ হয়েছে।" else "Registration failed.")
@@ -456,6 +473,11 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         val cleanInput = emailOrPhone.trim()
         val cleanPass = pass.trim()
         val isBn = appLanguage.value == "bn"
+
+        if (!repository.isNetworkAvailable()) {
+            callback(if (isBn) "লগইন করতে একটি সচল ইন্টারনেট সংযোগ প্রয়োজন। অনুগ্রহ করে আপনার ওয়াই-ফাই বা মোবাইল ডাটা চালু করুন।" else "An active internet connection is required to log in. Please enable your Wi-Fi or mobile data.")
+            return
+        }
 
         if (cleanInput.isEmpty()) {
             callback(if (isBn) "দয়া করে মোবাইল নাম্বার অথবা ইমেইল দিন!" else "Please provide an email or phone number!")
@@ -474,11 +496,13 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     val name = sharedPrefs.getString("logged_user_display_name", "") ?: ""
                     val pic = sharedPrefs.getString("logged_user_profile_pic", "") ?: ""
                     val status = sharedPrefs.getString("logged_user_status_message", "") ?: "বার্তা (Chat) ব্যবহার করছি!"
+                    val email = sharedPrefs.getString("logged_user_email", "") ?: ""
                     
                     _myNumber.value = phone
                     userDisplayName.value = name
                     userProfilePicBase64.value = pic
                     userStatusMessage.value = status
+                    userEmail.value = email
                     seedDummyContacts()
                     callback(null)
                 } else {
@@ -615,16 +639,28 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             .remove("logged_user_display_name")
             .remove("logged_user_profile_pic")
             .remove("logged_user_status_message")
+            .remove("logged_user_email")
             .apply()
         _myNumber.value = null
         _activeContact.value = null
         _navigationStack.value = listOf("chats")
         userProfilePicBase64.value = ""
         userDisplayName.value = ""
+        userEmail.value = ""
         repository.stopListeningToGroups()
         repository.stopAllMessageListeners()
         viewModelScope.launch {
             db.contactDao().deleteAllContacts()
+        }
+    }
+
+    fun updateEmailInFirebase(newEmail: String, onComplete: (String?) -> Unit) {
+        viewModelScope.launch {
+            val error = repository.updateEmailInFirebase(newEmail)
+            if (error == null) {
+                userEmail.value = newEmail.trim().lowercase()
+            }
+            onComplete(error)
         }
     }
 

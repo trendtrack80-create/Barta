@@ -1089,6 +1089,8 @@ class ChatRepository(
             return@suspendCancellableCoroutine
         }
 
+        db.enableNetwork()
+
         // 1. Check if email is unique in Firestore
         db.collection("users").whereEqualTo("email", email.trim().lowercase()).get()
             .addOnSuccessListener { emailQuery ->
@@ -1178,6 +1180,8 @@ class ChatRepository(
             return@suspendCancellableCoroutine
         }
 
+        db.enableNetwork()
+
         val cleanInput = emailOrPhone.trim()
         val isEmail = cleanInput.contains("@")
 
@@ -1230,38 +1234,78 @@ class ChatRepository(
                 .addOnSuccessListener { document ->
                     if (document != null && document.exists()) {
                         val associatedEmail = document.getString("email")
-                        if (!associatedEmail.isNullOrBlank()) {
-                            auth.signInWithEmailAndPassword(associatedEmail, passwordHash)
-                                .addOnSuccessListener { authResult ->
-                                    val name = document.getString("name") ?: "ব্যবহারকারী"
-                                    val pic = document.getString("profilePicBase64") ?: ""
-                                    val status = document.getString("status") ?: "বার্তা (Chat) ব্যবহার করছি!"
-                                    val createdAt = document.getLong("createdAt") ?: System.currentTimeMillis()
-
-                                    repositoryScope.launch {
-                                        // Store locally
-                                        val localUser = LocalUser(cleanInput, name, passwordHash, pic, status)
-                                        userDao.insertUser(localUser)
-
-                                        // Save to SharedPreferences
-                                        sharedPrefs.edit()
-                                            .putString("logged_user_phone", cleanInput)
-                                            .putString("logged_user_display_name", name)
-                                            .putString("logged_user_profile_pic", pic)
-                                            .putString("logged_user_status_message", status)
-                                            .putString("logged_user_email", associatedEmail)
-                                            .putLong("logged_user_created_at", createdAt)
-                                            .apply()
-
-                                        continuation.resume(null) // Success
-                                    }
-                                }
-                                .addOnFailureListener { exception ->
-                                    continuation.resume(exception.localizedMessage ?: "Invalid phone or password.")
-                                }
+                        val finalEmail = if (associatedEmail.isNullOrBlank()) {
+                            "${cleanInput}@bartachat.com"
                         } else {
-                            continuation.resume("This phone number is registered, but has no email associated with it.")
+                            associatedEmail
                         }
+
+                        auth.signInWithEmailAndPassword(finalEmail, passwordHash)
+                            .addOnSuccessListener { authResult ->
+                                val name = document.getString("name") ?: "ব্যবহারকারী"
+                                val pic = document.getString("profilePicBase64") ?: ""
+                                val status = document.getString("status") ?: "বার্তা (Chat) ব্যবহার করছি!"
+                                val createdAt = document.getLong("createdAt") ?: System.currentTimeMillis()
+
+                                repositoryScope.launch {
+                                    // Store locally
+                                    val localUser = LocalUser(cleanInput, name, passwordHash, pic, status)
+                                    userDao.insertUser(localUser)
+
+                                    // Save to SharedPreferences
+                                    sharedPrefs.edit()
+                                        .putString("logged_user_phone", cleanInput)
+                                        .putString("logged_user_display_name", name)
+                                        .putString("logged_user_profile_pic", pic)
+                                        .putString("logged_user_status_message", status)
+                                        .putString("logged_user_email", finalEmail)
+                                        .putLong("logged_user_created_at", createdAt)
+                                        .apply()
+
+                                    // If email was blank/null in Firestore, let's sync it now!
+                                    if (associatedEmail.isNullOrBlank()) {
+                                        db.collection("users").document(cleanInput).update("email", finalEmail)
+                                    }
+
+                                    continuation.resume(null) // Success
+                                }
+                            }
+                            .addOnFailureListener { signInException ->
+                                // If the user was registered in Firestore but never created in FirebaseAuth (older accounts migrating),
+                                // let's automatically create the FirebaseAuth account now!
+                                if (associatedEmail.isNullOrBlank()) {
+                                    auth.createUserWithEmailAndPassword(finalEmail, passwordHash)
+                                        .addOnSuccessListener { authResult ->
+                                            val name = document.getString("name") ?: "ব্যবহারকারী"
+                                            val pic = document.getString("profilePicBase64") ?: ""
+                                            val status = document.getString("status") ?: "বার্তা (Chat) ব্যবহার করছি!"
+                                            val createdAt = document.getLong("createdAt") ?: System.currentTimeMillis()
+
+                                            repositoryScope.launch {
+                                                val localUser = LocalUser(cleanInput, name, passwordHash, pic, status)
+                                                userDao.insertUser(localUser)
+
+                                                sharedPrefs.edit()
+                                                    .putString("logged_user_phone", cleanInput)
+                                                    .putString("logged_user_display_name", name)
+                                                    .putString("logged_user_profile_pic", pic)
+                                                    .putString("logged_user_status_message", status)
+                                                    .putString("logged_user_email", finalEmail)
+                                                    .putLong("logged_user_created_at", createdAt)
+                                                    .apply()
+
+                                                db.collection("users").document(cleanInput).update("email", finalEmail)
+
+                                                continuation.resume(null) // Success
+                                            }
+                                        }
+                                        .addOnFailureListener { createException ->
+                                            continuation.resume(createException.localizedMessage ?: "Failed to migrate old account to secure Authentication.")
+                                        }
+                                } else {
+                                    continuation.resume(signInException.localizedMessage ?: "Invalid phone or password.")
+                                }
+                            }
                     } else {
                         continuation.resume("No account found with this phone number!")
                     }
@@ -1299,6 +1343,51 @@ class ChatRepository(
             }
             .addOnFailureListener { e ->
                 continuation.resume("Failed to verify email existence: ${e.localizedMessage}")
+            }
+    }
+
+    suspend fun updateEmailInFirebase(newEmail: String): String? = suspendCancellableCoroutine { continuation ->
+        val auth = firebaseAuth
+        val db = firestore
+        val phone = sharedPrefs.getString("logged_user_phone", "") ?: ""
+        if (auth == null || db == null || phone.isEmpty()) {
+            continuation.resume("Firebase or user session is not available.")
+            return@suspendCancellableCoroutine
+        }
+
+        val currentUser = auth.currentUser
+        if (currentUser == null) {
+            continuation.resume("User is not signed in to Firebase.")
+            return@suspendCancellableCoroutine
+        }
+
+        // 1. Check if email is unique in Firestore
+        db.collection("users").whereEqualTo("email", newEmail.trim().lowercase()).get()
+            .addOnSuccessListener { emailQuery ->
+                if (!emailQuery.isEmpty) {
+                    continuation.resume("An account with this email address already exists!")
+                    return@addOnSuccessListener
+                }
+
+                // 2. Update Firebase Auth Email
+                currentUser.updateEmail(newEmail.trim().lowercase())
+                    .addOnSuccessListener {
+                        // 3. Update Firestore Document
+                        db.collection("users").document(phone).update("email", newEmail.trim().lowercase())
+                            .addOnSuccessListener {
+                                sharedPrefs.edit().putString("logged_user_email", newEmail.trim().lowercase()).apply()
+                                continuation.resume(null) // Success
+                            }
+                            .addOnFailureListener { e ->
+                                continuation.resume("Updated credentials, but failed to sync email to profile: ${e.localizedMessage}")
+                            }
+                    }
+                    .addOnFailureListener { exception ->
+                        continuation.resume(exception.localizedMessage ?: "Failed to update email in Firebase Authentication. If you logged in a long time ago, please log out and log in again to perform this action.")
+                    }
+            }
+            .addOnFailureListener { e ->
+                continuation.resume("Failed to verify email uniqueness: ${e.localizedMessage}")
             }
     }
 

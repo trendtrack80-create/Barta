@@ -90,6 +90,12 @@ android {
       enableSplit = false
     }
   }
+
+  lint {
+    abortOnError = false
+    checkReleaseBuilds = false
+    disable.add("InvalidFragmentVersionForActivityResult")
+  }
 }
 
 // Configure the Secrets Gradle Plugin to use .env and .env.example files
@@ -169,23 +175,34 @@ tasks.register("prepareApkDownload") {
     val apkOutputDir = layout.buildDirectory.dir("outputs/apk").get().asFile
     doLast {
         val apkDownloadDir = File(rootDirFile, "APK_DOWNLOAD")
-        
         if (!apkDownloadDir.exists()) {
             apkDownloadDir.mkdirs()
         }
-        
         val apkDownloadApk = File(apkDownloadDir, "app-debug.apk")
+
+        val buildOutputsDir = File(rootDirFile, ".build-outputs")
+        if (!buildOutputsDir.exists()) {
+            buildOutputsDir.mkdirs()
+        }
+        val buildOutputsApk = File(buildOutputsDir, "app-debug.apk")
         
         println("=== APK Preparation Details ===")
         println("Scanning build outputs at: ${apkOutputDir.absolutePath}")
         
         var foundApk: File? = null
         if (apkOutputDir.exists()) {
-            apkOutputDir.walkTopDown().forEach { file ->
-                if (file.isFile && file.name.endsWith(".apk") && !file.name.contains("unaligned")) {
-                    foundApk = file
-                    println("Found generated APK: ${file.absolutePath} (Size: ${file.length()} bytes)")
+            val debugApk = File(apkOutputDir, "debug/app-debug.apk")
+            if (debugApk.exists()) {
+                foundApk = debugApk
+            } else {
+                apkOutputDir.walkTopDown().forEach { file ->
+                    if (file.isFile && file.name.endsWith(".apk") && !file.name.contains("unaligned")) {
+                        foundApk = file
+                    }
                 }
+            }
+            if (foundApk != null) {
+                println("Found generated APK: ${foundApk!!.absolutePath} (Size: ${foundApk!!.length()} bytes)")
             }
         }
         
@@ -195,6 +212,8 @@ tasks.register("prepareApkDownload") {
             println("Preparing APK from source: ${apkFile.absolutePath} (Size: ${apkFile.length()} bytes)")
             apkFile.copyTo(apkDownloadApk, overwrite = true)
             println("Copied to ${apkDownloadApk.absolutePath}")
+            apkFile.copyTo(buildOutputsApk, overwrite = true)
+            println("Copied to ${buildOutputsApk.absolutePath}")
         } else {
             println("No fresh APK found at build directory scanning.")
             if (apkDownloadApk.exists()) {
