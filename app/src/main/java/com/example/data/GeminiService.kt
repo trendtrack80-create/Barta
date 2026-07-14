@@ -126,12 +126,14 @@ object GeminiService {
 
     /**
      * Direct REST call of gemini-2.5-flash as mandated for secure-fallback configuration
+     * with Google Search Grounding support.
      */
     private fun callDirectGeminiApi(
         userPhone: String,
         userMessage: String,
         previousMessages: List<Message>,
-        language: String
+        language: String,
+        enableSearch: Boolean = true
     ): String {
         val apiKey = BuildConfig.GEMINI_API_KEY
         if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") {
@@ -197,25 +199,54 @@ object GeminiService {
         rootPayload.put("systemInstruction", systemInstructionObj)
         rootPayload.put("generationConfig", JSONObject().put("temperature", 0.7))
 
+        if (enableSearch) {
+            try {
+                val toolsArray = JSONArray()
+                val searchTool = JSONObject().put("googleSearch", JSONObject())
+                toolsArray.put(searchTool)
+                rootPayload.put("tools", toolsArray)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to build tools JSON: ${e.message}")
+            }
+        }
+
         val body = rootPayload.toString().toRequestBody(mediaType)
         val request = Request.Builder()
             .url(endpoint)
             .post(body)
             .build()
 
-        client.newCall(request).execute().use { response ->
-            val responseBody = response.body?.string() ?: ""
-            if (!response.isSuccessful) {
-                Log.e(TAG, "Direct API failed code ${response.code} body: $responseBody")
-                throw Exception("Direct Gemini API error: code ${response.code}")
-            }
+        try {
+            client.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string() ?: ""
+                if (!response.isSuccessful) {
+                    Log.e(TAG, "Direct API failed code ${response.code} body: $responseBody")
+                    if (enableSearch) {
+                        Log.w(TAG, "Search Grounding failed or unsupported under this API Key. Falling back to standard generation...")
+                        return callDirectGeminiApi(userPhone, userMessage, previousMessages, language, enableSearch = false)
+                    }
+                    throw Exception("Direct Gemini API error: code ${response.code}")
+                }
 
-            val rootJson = JSONObject(responseBody)
-            val candidates = rootJson.getJSONArray("candidates")
-            val firstCandidate = candidates.getJSONObject(0)
-            val content = firstCandidate.getJSONObject("content")
-            val parts = content.getJSONArray("parts")
-            return parts.getJSONObject(0).getString("text")
+                val rootJson = JSONObject(responseBody)
+                val candidates = rootJson.getJSONArray("candidates")
+                val firstCandidate = candidates.getJSONObject(0)
+                val content = firstCandidate.getJSONObject("content")
+                val parts = content.getJSONArray("parts")
+                return parts.getJSONObject(0).getString("text")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in direct Gemini API call: ${e.message}", e)
+            if (enableSearch) {
+                Log.w(TAG, "Error while search is enabled. Retrying without search tool...", e)
+                val result = callDirectGeminiApi(userPhone, userMessage, previousMessages, language, enableSearch = false)
+                return if (language == "bn") {
+                    "$result\n\n*(দ্রষ্টব্য: গুগল সার্চ গ্রাউন্ডিং বর্তমানে এই এপিআই কী-তে উপলব্ধ নয়, স্ট্যান্ডার্ড মডেল নলেজ ব্যবহার করা হয়েছে)*"
+                } else {
+                    "$result\n\n*(Note: Google Search Grounding is currently unavailable on this API Key configuration, standard model knowledge used instead)*"
+                }
+            }
+            throw e
         }
     }
 }

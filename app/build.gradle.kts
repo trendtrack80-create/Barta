@@ -179,6 +179,8 @@ tasks.register("prepareApkDownload") {
             apkDownloadDir.mkdirs()
         }
         val apkDownloadApk = File(apkDownloadDir, "app-debug.apk")
+        val customNameApk = File(apkDownloadDir, "barta-chat-v1.0-26MB.apk")
+        val customNameApk2 = File(apkDownloadDir, "barta-chat-all-features.apk")
 
         val buildOutputsDir = File(rootDirFile, ".build-outputs")
         if (!buildOutputsDir.exists()) {
@@ -212,6 +214,10 @@ tasks.register("prepareApkDownload") {
             println("Preparing APK from source: ${apkFile.absolutePath} (Size: ${apkFile.length()} bytes)")
             apkFile.copyTo(apkDownloadApk, overwrite = true)
             println("Copied to ${apkDownloadApk.absolutePath}")
+            apkFile.copyTo(customNameApk, overwrite = true)
+            println("Copied to ${customNameApk.absolutePath}")
+            apkFile.copyTo(customNameApk2, overwrite = true)
+            println("Copied to ${customNameApk2.absolutePath}")
             apkFile.copyTo(buildOutputsApk, overwrite = true)
             println("Copied to ${buildOutputsApk.absolutePath}")
         } else {

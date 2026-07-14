@@ -21,6 +21,9 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -44,6 +47,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
 import com.example.data.*
@@ -129,15 +133,6 @@ fun AIAssistantChatScreen(
     var showEditDialog by remember { mutableStateOf(false) }
     var messageToEdit by remember { mutableStateOf<AiMessage?>(null) }
     var editedTextState by remember { mutableStateOf("") }
-
-    // Colors Custom Palette (Premium Look)
-    val primaryColor = WhatsAppTealVal
-    val secondaryColor = WhatsAppGreenVal
-    val cardBg = if (isDarkTheme) Color(0xFF1E293B) else Color(0xFFF1F5F9)
-    val userBubbleBg = if (isDarkTheme) Color(0xFF0F766E) else Color(0xFFCCFBF1)
-    val userBubbleText = if (isDarkTheme) Color.White else Color(0xFF111827)
-    val aiBubbleBg = if (isDarkTheme) Color(0xFF1E293B) else Color.White
-    val aiBubbleText = if (isDarkTheme) Color(0xFFE2E8F0) else Color(0xFF1F2937)
 
     // Sync helpers
     val firestore = remember {
@@ -228,6 +223,362 @@ fun AIAssistantChatScreen(
             }
         }
     }
+
+    // Voice Chat State variables and Controllers
+    var isVoiceChatActive by remember { mutableStateOf(false) }
+    var voiceState by remember { mutableStateOf("idle") } // idle, listening, processing, speaking, error
+    var voiceUserText by remember { mutableStateOf("") }
+    var voiceAiResponseText by remember { mutableStateOf("") }
+    var voiceErrorMessage by remember { mutableStateOf("") }
+    var liveRmsDb by remember { mutableStateOf(0f) }
+
+    val hasMicPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+        context,
+        android.Manifest.permission.RECORD_AUDIO
+    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+    val speechRecognizer = remember {
+        try {
+            android.speech.SpeechRecognizer.createSpeechRecognizer(context)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    var tts by remember { mutableStateOf<android.speech.tts.TextToSpeech?>(null) }
+    LaunchedEffect(isVoiceChatActive) {
+        if (isVoiceChatActive) {
+            if (tts == null) {
+                tts = android.speech.tts.TextToSpeech(context) { status ->
+                    if (status == android.speech.tts.TextToSpeech.SUCCESS) {
+                        tts?.language = if (appLanguage == "bn") java.util.Locale("bn", "BD") else java.util.Locale.US
+                    }
+                }
+            }
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            tts?.stop()
+            tts?.shutdown()
+            try {
+                speechRecognizer?.destroy()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun startListening() {
+        if (speechRecognizer != null) {
+            tts?.stop()
+            voiceState = "listening"
+            voiceUserText = ""
+            voiceAiResponseText = ""
+            voiceErrorMessage = ""
+            val intent = android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                val langTag = if (appLanguage == "bn") "bn-BD" else "en-US"
+                putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE, langTag)
+                putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, langTag)
+                putExtra(android.speech.RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE, langTag)
+            }
+            
+            speechRecognizer.setRecognitionListener(object : android.speech.RecognitionListener {
+                override fun onReadyForSpeech(params: android.os.Bundle?) {
+                    liveRmsDb = 0f
+                }
+                override fun onBeginningOfSpeech() {}
+                override fun onRmsChanged(rmsdB: Float) {
+                    liveRmsDb = rmsdB
+                }
+                override fun onBufferReceived(buffer: ByteArray?) {}
+                override fun onEndOfSpeech() {
+                    voiceState = "processing"
+                }
+                override fun onError(error: Int) {
+                    if (!isVoiceChatActive) return
+                    val errorMsg = when (error) {
+                        android.speech.SpeechRecognizer.ERROR_AUDIO -> txt("অডিও রেকর্ডিংয়ে সমস্যা!", "Audio recording error!")
+                        android.speech.SpeechRecognizer.ERROR_CLIENT -> txt("ক্লায়েন্ট সাইড ত্রুটি!", "Client side error!")
+                        android.speech.SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> txt("মাইক্রোফোন পারমিশন নেই!", "Insufficient permissions!")
+                        android.speech.SpeechRecognizer.ERROR_NETWORK -> txt("নেটওয়ার্ক ত্রুটি!", "Network error!")
+                        android.speech.SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> txt("নেটওয়ার্ক সময়সীমা শেষ!", "Network timeout!")
+                        android.speech.SpeechRecognizer.ERROR_NO_MATCH -> txt("কথা বোঝা যায়নি, আবার বলুন!", "Speech not recognized, please speak clearly!")
+                        android.speech.SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> txt("ভয়েস ইঞ্জিন ব্যস্ত!", "Voice engine busy!")
+                        android.speech.SpeechRecognizer.ERROR_SERVER -> txt("সার্ভার ত্রুটি!", "Server error!")
+                        android.speech.SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> txt("কথা বলার সময়সীমা পার হয়েছে!", "No speech input detected!")
+                        else -> txt("ভয়েস টাইপিং সমস্যা!", "Speech recognition error!")
+                    }
+                    voiceErrorMessage = errorMsg
+                    voiceState = "error"
+                }
+                override fun onResults(results: android.os.Bundle?) {
+                    if (!isVoiceChatActive) return
+                    val matches = results?.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION)
+                    if (!matches.isNullOrEmpty()) {
+                        val spoken = matches[0]
+                        voiceUserText = spoken
+                        voiceState = "processing"
+                        
+                        scope.launch(Dispatchers.IO) {
+                            var currentSessionId = activeSessionId
+                            val isNewChat = currentSessionId == null
+                            
+                            if (isNewChat) {
+                                val newSessionId = UUID.randomUUID().toString()
+                                val rawTitle = if (spoken.length > 25) spoken.take(25) + "..." else spoken
+                                val cleanTitle = rawTitle.replace("\n", " ").trim()
+                                val newSession = AiSession(
+                                    id = newSessionId,
+                                    title = cleanTitle,
+                                    createdAt = System.currentTimeMillis()
+                                )
+                                db.aiSessionDao().insertSession(newSession)
+                                syncSessionToCloud(newSession)
+                                currentSessionId = newSessionId
+                                withContext(Dispatchers.Main) {
+                                    activeSessionId = newSessionId
+                                }
+                            }
+
+                            val userMsgId = UUID.randomUUID().toString()
+                            val userMsg = AiMessage(
+                                id = userMsgId,
+                                sessionId = currentSessionId!!,
+                                sender = "user",
+                                text = spoken,
+                                timestamp = System.currentTimeMillis()
+                            )
+                            db.aiMessageDao().insertMessage(userMsg)
+                            syncMessageToCloud(userMsg)
+
+                            withContext(Dispatchers.Main) {
+                                isGenerating = true
+                            }
+
+                            try {
+                                val history = db.aiMessageDao().getMessagesForSession(currentSessionId)
+                                val legacyMessages = history.map { aiMsg ->
+                                    Message(
+                                        id = aiMsg.id,
+                                        senderId = if (aiMsg.sender == "user") myPhone ?: "user" else "01300000000",
+                                        receiverId = if (aiMsg.sender == "user") "01300000000" else myPhone ?: "user",
+                                        text = aiMsg.text,
+                                        timestamp = aiMsg.timestamp,
+                                        senderName = if (aiMsg.sender == "user") "User" else "Barta AI"
+                                    )
+                                }
+
+                                val aiResponseText = GeminiService.getGeminiResponse(
+                                    context = context,
+                                    userPhone = myPhone ?: "user",
+                                    userMessage = spoken,
+                                    previousMessages = legacyMessages,
+                                    language = appLanguage
+                                )
+
+                                val aiMsgId = UUID.randomUUID().toString()
+                                val aiMsg = AiMessage(
+                                    id = aiMsgId,
+                                    sessionId = currentSessionId,
+                                    sender = "ai",
+                                    text = aiResponseText,
+                                    timestamp = System.currentTimeMillis()
+                                )
+                                db.aiMessageDao().insertMessage(aiMsg)
+                                syncMessageToCloud(aiMsg)
+
+                                withContext(Dispatchers.Main) {
+                                    voiceAiResponseText = aiResponseText
+                                    voiceState = "speaking"
+                                    
+                                    tts?.let { speech ->
+                                        val isBengali = aiResponseText.any { it in '\u0980'..'\u09FF' }
+                                        speech.language = if (isBengali) java.util.Locale("bn", "BD") else java.util.Locale.US
+                                        
+                                        speech.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
+                                            override fun onStart(utteranceId: String?) {}
+                                            override fun onDone(utteranceId: String?) {
+                                                scope.launch(Dispatchers.Main) {
+                                                    if (isVoiceChatActive) {
+                                                        startListening()
+                                                    }
+                                                }
+                                            }
+                                            override fun onError(utteranceId: String?) {}
+                                        })
+                                        
+                                        val params = HashMap<String, String>()
+                                        params[android.speech.tts.TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID] = "ai_voice_id"
+                                        speech.speak(aiResponseText, android.speech.tts.TextToSpeech.QUEUE_FLUSH, params)
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                                withContext(Dispatchers.Main) {
+                                    voiceErrorMessage = txt("দুঃখিত, কোনো সমস্যা হয়েছে।", "Sorry, an error occurred.")
+                                    voiceState = "error"
+                                }
+                            } finally {
+                                withContext(Dispatchers.Main) {
+                                    isGenerating = false
+                                }
+                            }
+                        }
+                    } else {
+                        voiceErrorMessage = txt("কথা বোঝা যায়নি, আবার বলুন!", "Speech not recognized, please try again!")
+                        voiceState = "error"
+                    }
+                }
+                override fun onPartialResults(partialResults: android.os.Bundle?) {
+                    val matches = partialResults?.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION)
+                    if (!matches.isNullOrEmpty()) {
+                        voiceUserText = matches[0]
+                    }
+                }
+                override fun onEvent(eventType: Int, params: android.os.Bundle?) {}
+            })
+            
+            speechRecognizer.startListening(intent)
+        }
+    }
+
+    fun submitVoiceQuery(queryText: String) {
+        tts?.stop()
+        speechRecognizer?.cancel()
+        voiceUserText = queryText
+        voiceState = "processing"
+        voiceAiResponseText = ""
+        voiceErrorMessage = ""
+        
+        scope.launch(Dispatchers.IO) {
+            var currentSessionId = activeSessionId
+            val isNewChat = currentSessionId == null
+            
+            if (isNewChat) {
+                val newSessionId = UUID.randomUUID().toString()
+                val rawTitle = if (queryText.length > 25) queryText.take(25) + "..." else queryText
+                val cleanTitle = rawTitle.replace("\n", " ").trim()
+                val newSession = AiSession(
+                    id = newSessionId,
+                    title = cleanTitle,
+                    createdAt = System.currentTimeMillis()
+                )
+                db.aiSessionDao().insertSession(newSession)
+                syncSessionToCloud(newSession)
+                currentSessionId = newSessionId
+                withContext(Dispatchers.Main) {
+                    activeSessionId = newSessionId
+                }
+            }
+
+            val userMsgId = UUID.randomUUID().toString()
+            val userMsg = AiMessage(
+                id = userMsgId,
+                sessionId = currentSessionId!!,
+                sender = "user",
+                text = queryText,
+                timestamp = System.currentTimeMillis()
+            )
+            db.aiMessageDao().insertMessage(userMsg)
+            syncMessageToCloud(userMsg)
+
+            withContext(Dispatchers.Main) {
+                isGenerating = true
+            }
+
+            try {
+                val history = db.aiMessageDao().getMessagesForSession(currentSessionId)
+                val legacyMessages = history.map { aiMsg ->
+                    Message(
+                        id = aiMsg.id,
+                        senderId = if (aiMsg.sender == "user") myPhone ?: "user" else "01300000000",
+                        receiverId = if (aiMsg.sender == "user") "01300000000" else myPhone ?: "user",
+                        text = aiMsg.text,
+                        timestamp = aiMsg.timestamp,
+                        senderName = if (aiMsg.sender == "user") "User" else "Barta AI"
+                    )
+                }
+
+                val aiResponseText = GeminiService.getGeminiResponse(
+                    context = context,
+                    userPhone = myPhone ?: "user",
+                    userMessage = queryText,
+                    previousMessages = legacyMessages,
+                    language = appLanguage
+                )
+
+                val aiMsgId = UUID.randomUUID().toString()
+                val aiMsg = AiMessage(
+                    id = aiMsgId,
+                    sessionId = currentSessionId,
+                    sender = "ai",
+                    text = aiResponseText,
+                    timestamp = System.currentTimeMillis()
+                )
+                db.aiMessageDao().insertMessage(aiMsg)
+                syncMessageToCloud(aiMsg)
+
+                withContext(Dispatchers.Main) {
+                    voiceAiResponseText = aiResponseText
+                    voiceState = "speaking"
+                    
+                    tts?.let { speech ->
+                        val isBengali = aiResponseText.any { it in '\u0980'..'\u09FF' }
+                        speech.language = if (isBengali) java.util.Locale("bn", "BD") else java.util.Locale.US
+                        
+                        speech.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
+                            override fun onStart(utteranceId: String?) {}
+                            override fun onDone(utteranceId: String?) {
+                                scope.launch(Dispatchers.Main) {
+                                    if (isVoiceChatActive) {
+                                        startListening()
+                                    }
+                                }
+                            }
+                            override fun onError(utteranceId: String?) {}
+                        })
+                        
+                        val params = HashMap<String, String>()
+                        params[android.speech.tts.TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID] = "ai_voice_id"
+                        speech.speak(aiResponseText, android.speech.tts.TextToSpeech.QUEUE_FLUSH, params)
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                withContext(Dispatchers.Main) {
+                    voiceErrorMessage = txt("দুঃখিত, কোনো সমস্যা হয়েছে।", "Sorry, an error occurred.")
+                    voiceState = "error"
+                }
+            } finally {
+                withContext(Dispatchers.Main) {
+                    isGenerating = false
+                }
+            }
+        }
+    }
+
+    val micPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            isVoiceChatActive = true
+            startListening()
+        } else {
+            Toast.makeText(context, txt("মাইক্রোফোন পারমিশন প্রয়োজন!", "Microphone permission is required!"), Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // Colors Custom Palette (Premium Look)
+    val primaryColor = WhatsAppTealVal
+    val secondaryColor = WhatsAppGreenVal
+    val cardBg = if (isDarkTheme) Color(0xFF1E293B) else Color(0xFFF1F5F9)
+    val userBubbleBg = if (isDarkTheme) Color(0xFF0F766E) else Color(0xFFCCFBF1)
+    val userBubbleText = if (isDarkTheme) Color.White else Color(0xFF111827)
+    val aiBubbleBg = if (isDarkTheme) Color(0xFF1E293B) else Color.White
+    val aiBubbleText = if (isDarkTheme) Color(0xFFE2E8F0) else Color(0xFF1F2937)
 
     // Auto-scroll on new messages
     LaunchedEffect(activeMessages.value.size, isGenerating) {
@@ -1223,14 +1574,11 @@ fun AIAssistantChatScreen(
                         // Microphone Speech-to-Text Button
                         IconButton(
                             onClick = {
-                                try {
-                                    val intent = android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                                        putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                                        putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE, java.util.Locale.getDefault())
-                                    }
-                                    speechRecognizerLauncher.launch(intent)
-                                } catch (e: Exception) {
-                                    Toast.makeText(context, "Speech recognition not available", Toast.LENGTH_SHORT).show()
+                                if (hasMicPermission) {
+                                    isVoiceChatActive = true
+                                    startListening()
+                                } else {
+                                    micPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
                                 }
                             },
                             modifier = Modifier.size(36.dp).testTag("ai_mic_button")
@@ -1566,6 +1914,719 @@ fun AIAssistantChatScreen(
                 }
             }
         )
+    }
+
+    // Custom Face-to-Face Voice Chat Dialog Overlay (Full screen & Premium design matching reference)
+    if (isVoiceChatActive) {
+        Dialog(
+            onDismissRequest = {
+                speechRecognizer?.cancel()
+                tts?.stop()
+                isVoiceChatActive = false
+            },
+            properties = androidx.compose.ui.window.DialogProperties(
+                usePlatformDefaultWidth = false,
+                dismissOnBackPress = true,
+                dismissOnClickOutside = false
+            )
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = if (isDarkTheme) Color(0xFF0F172A) else Color(0xFFF7FBF9) // slate vs mint off-white
+            ) {
+                val infiniteTransition = rememberInfiniteTransition()
+
+                // Define suggestion states
+                val allSuggestions = remember {
+                    listOf(
+                        txt("আজকের খবর কী?", "What's the news today?"),
+                        txt("আবহাওয়া কেমন?", "How is the weather?"),
+                        txt("ক্রিকেটের স্কোর", "What is the cricket score?"),
+                        txt("একটি মজার কৌতুক বলো", "Tell me a funny joke"),
+                        txt("ইতিহাসের একটি সুন্দর তথ্য দাও", "Give me an interesting history fact"),
+                        txt("আজকের অনুপ্রেরণামূলক বাণী", "Today's motivational quote"),
+                        txt("একটি গান গেয়ে শোনাও", "Sing a song for me"),
+                        txt("তুমি কী কী করতে পারো?", "What features do you have?")
+                    )
+                }
+                var currentSuggestions by remember { mutableStateOf(allSuggestions.shuffled().take(3)) }
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .statusBarsPadding()
+                        .navigationBarsPadding()
+                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.SpaceBetween
+                ) {
+                    // 1. TOP BAR (Back, Title, Settings Sliders)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        // Circular Back Button
+                        IconButton(
+                            onClick = {
+                                speechRecognizer?.cancel()
+                                tts?.stop()
+                                isVoiceChatActive = false
+                            },
+                            modifier = Modifier
+                                .size(44.dp)
+                                .background(
+                                    color = if (isDarkTheme) Color(0xFF1E293B) else Color.White,
+                                    shape = CircleShape
+                                )
+                                .border(
+                                    BorderStroke(1.dp, if (isDarkTheme) Color.DarkGray.copy(alpha = 0.4f) else Color.LightGray.copy(alpha = 0.5f)),
+                                    CircleShape
+                                )
+                                .testTag("voice_chat_back_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ArrowBack,
+                                contentDescription = "Close",
+                                tint = if (isDarkTheme) Color.LightGray else Color.DarkGray
+                            )
+                        }
+
+                        // Title "বার্তা AI" with sparkle
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "বার্তা AI",
+                                fontSize = 22.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = if (isDarkTheme) Color.White else Color(0xFF1E293B)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = null,
+                                tint = primaryColor,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        // Sliders / Settings/Tune Button
+                        IconButton(
+                            onClick = {
+                                Toast.makeText(context, txt("ভয়েস সেটিংস পরিবর্তন করা হচ্ছে", "Voice settings adjusted"), Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier
+                                .size(44.dp)
+                                .background(
+                                    color = if (isDarkTheme) Color(0xFF1E293B) else Color.White,
+                                    shape = CircleShape
+                                )
+                                .border(
+                                    BorderStroke(1.dp, if (isDarkTheme) Color.DarkGray.copy(alpha = 0.4f) else Color.LightGray.copy(alpha = 0.5f)),
+                                    CircleShape
+                                )
+                                .testTag("voice_chat_settings_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Tune,
+                                contentDescription = "Settings",
+                                tint = if (isDarkTheme) Color.LightGray else Color.DarkGray
+                            )
+                        }
+                    }
+
+                    // Badge/Chip below top bar
+                    Box(
+                        modifier = Modifier
+                            .background(
+                                color = primaryColor.copy(alpha = 0.08f),
+                                shape = RoundedCornerShape(20.dp)
+                            )
+                            .border(BorderStroke(0.5.dp, primaryColor.copy(alpha = 0.2f)), RoundedCornerShape(20.dp))
+                            .padding(horizontal = 14.dp, vertical = 6.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = null,
+                                tint = primaryColor,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = txt("AI সহ ভয়েস চ্যাট", "AI Voice Chat"),
+                                color = primaryColor,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // 2. CENTER ORBIT & WAVEFORM LAYOUT
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f, fill = false),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Left Waveform
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val barCount = 8
+                            for (i in 0 until barCount) {
+                                val taper = (i + 1).toFloat() / barCount.toFloat()
+                                val baseDelay = i * 70
+                                val speed = when (voiceState) {
+                                    "listening" -> 180
+                                    "speaking" -> 260
+                                    "processing" -> 380
+                                    else -> 1000
+                                }
+                                val maxAmp = when (voiceState) {
+                                    "listening" -> (8f + (liveRmsDb.coerceAtLeast(0f) * 4.5f)) * taper
+                                    "speaking" -> 32f * taper
+                                    "processing" -> 10f * taper
+                                    else -> 4f
+                                }
+                                val animHeight by infiniteTransition.animateFloat(
+                                    initialValue = 4f,
+                                    targetValue = maxAmp.coerceIn(4f, 55f),
+                                    animationSpec = infiniteRepeatable(
+                                        animation = tween(durationMillis = speed, delayMillis = baseDelay, easing = FastOutSlowInEasing),
+                                        repeatMode = RepeatMode.Reverse
+                                    )
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .width(3.dp)
+                                        .height(animHeight.dp)
+                                        .background(
+                                            color = primaryColor.copy(alpha = if (voiceState == "idle") 0.15f else 0.85f),
+                                            shape = RoundedCornerShape(2.dp)
+                                        )
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(10.dp))
+
+                        // Orbit & Central Mic Button Stack
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.size(200.dp)
+                        ) {
+                            // Pulsing glowing background layers
+                            val glowScale by infiniteTransition.animateFloat(
+                                initialValue = 1f,
+                                targetValue = if (voiceState == "listening" || voiceState == "speaking") 1.25f else 1.05f,
+                                animationSpec = infiniteRepeatable(
+                                    animation = tween(1200, easing = LinearEasing),
+                                    repeatMode = RepeatMode.Reverse
+                                )
+                            )
+
+                            // Glowing Outer Ring 1
+                            Box(
+                                modifier = Modifier
+                                    .size(190.dp)
+                                    .graphicsLayer {
+                                        scaleX = glowScale
+                                        scaleY = glowScale
+                                    }
+                                    .background(
+                                        color = primaryColor.copy(alpha = if (voiceState == "idle") 0.02f else 0.04f),
+                                        shape = CircleShape
+                                    )
+                            )
+
+                            // Glowing Ring 2
+                            Box(
+                                modifier = Modifier
+                                    .size(160.dp)
+                                    .graphicsLayer {
+                                        scaleX = if (voiceState == "listening") (1f + (liveRmsDb.coerceAtLeast(0f) / 12f)) else glowScale
+                                        scaleY = if (voiceState == "listening") (1f + (liveRmsDb.coerceAtLeast(0f) / 12f)) else glowScale
+                                    }
+                                    .background(
+                                        color = primaryColor.copy(alpha = if (voiceState == "idle") 0.04f else 0.08f),
+                                        shape = CircleShape
+                                    )
+                            )
+
+                            // Orbit arc line
+                            val rotationAngle by infiniteTransition.animateFloat(
+                                initialValue = 0f,
+                                targetValue = 360f,
+                                animationSpec = infiniteRepeatable(
+                                    animation = tween(durationMillis = 4000, easing = LinearEasing),
+                                    repeatMode = RepeatMode.Restart
+                                )
+                            )
+
+                            Canvas(
+                                modifier = Modifier
+                                    .size(176.dp)
+                                    .rotate(rotationAngle)
+                            ) {
+                                drawArc(
+                                    color = primaryColor,
+                                    startAngle = 0f,
+                                    sweepAngle = 100f,
+                                    useCenter = false,
+                                    style = androidx.compose.ui.graphics.drawscope.Stroke(
+                                        width = 2.dp.toPx(),
+                                        cap = androidx.compose.ui.graphics.StrokeCap.Round
+                                    )
+                                )
+                                drawArc(
+                                    color = primaryColor.copy(alpha = 0.2f),
+                                    startAngle = 150f,
+                                    sweepAngle = 120f,
+                                    useCenter = false,
+                                    style = androidx.compose.ui.graphics.drawscope.Stroke(
+                                        width = 1.dp.toPx(),
+                                        cap = androidx.compose.ui.graphics.StrokeCap.Round
+                                    )
+                                )
+                            }
+
+                            // Interactive Mic Button
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .size(124.dp)
+                                    .shadow(8.dp, CircleShape)
+                                    .background(
+                                        brush = Brush.linearGradient(
+                                            colors = when (voiceState) {
+                                                "listening" -> listOf(Color(0xFFE53935), Color(0xFFD81B60))
+                                                "processing" -> listOf(Color.Gray, Color.DarkGray)
+                                                "speaking" -> listOf(primaryColor, Color(0xFF00796B))
+                                                else -> listOf(primaryColor, Color(0xFF2E7D32))
+                                            }
+                                        ),
+                                        shape = CircleShape
+                                    )
+                                    .clickable {
+                                        if (voiceState == "listening") {
+                                            speechRecognizer?.stopListening()
+                                            voiceState = "processing"
+                                        } else if (voiceState == "speaking") {
+                                            tts?.stop()
+                                            voiceState = "idle"
+                                        } else {
+                                            startListening()
+                                        }
+                                    }
+                            ) {
+                                Icon(
+                                    imageVector = when (voiceState) {
+                                        "listening" -> Icons.Default.Stop
+                                        "processing" -> Icons.Default.HourglassEmpty
+                                        "speaking" -> Icons.Default.VolumeUp
+                                        else -> Icons.Default.Mic
+                                    },
+                                    contentDescription = "Microphone Button",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(36.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(10.dp))
+
+                        // Right Waveform
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val barCount = 8
+                            for (i in 0 until barCount) {
+                                val taper = (barCount - i).toFloat() / barCount.toFloat()
+                                val baseDelay = i * 70
+                                val speed = when (voiceState) {
+                                    "listening" -> 180
+                                    "speaking" -> 260
+                                    "processing" -> 380
+                                    else -> 1000
+                                }
+                                val maxAmp = when (voiceState) {
+                                    "listening" -> (8f + (liveRmsDb.coerceAtLeast(0f) * 4.5f)) * taper
+                                    "speaking" -> 32f * taper
+                                    "processing" -> 10f * taper
+                                    else -> 4f
+                                }
+                                val animHeight by infiniteTransition.animateFloat(
+                                    initialValue = 4f,
+                                    targetValue = maxAmp.coerceIn(4f, 55f),
+                                    animationSpec = infiniteRepeatable(
+                                        animation = tween(durationMillis = speed, delayMillis = baseDelay, easing = FastOutSlowInEasing),
+                                        repeatMode = RepeatMode.Reverse
+                                    )
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .width(3.dp)
+                                        .height(animHeight.dp)
+                                        .background(
+                                            color = primaryColor.copy(alpha = if (voiceState == "idle") 0.15f else 0.85f),
+                                            shape = RoundedCornerShape(2.dp)
+                                        )
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // 3. VOICE STATUS & DYNAMIC TRANSCRIPT CARD
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        // Title status
+                        Text(
+                            text = when (voiceState) {
+                                "listening" -> txt("আমি শুনছি...", "Listening...")
+                                "processing" -> txt("ভাবছি...", "Thinking...")
+                                "speaking" -> txt("কথা বলছি...", "Speaking...")
+                                "error" -> txt("সমস্যা হয়েছে!", "Error occurred!")
+                                else -> txt("মাইকে ক্লিক করে বলুন", "Tap mic to talk")
+                            },
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Black,
+                            color = if (isDarkTheme) Color.White else Color(0xFF1F2C34)
+                        )
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        // Subtext description
+                        Text(
+                            text = when (voiceState) {
+                                "listening" -> txt("বলুন, আমি আছি আপনার সাথে", "Speak, I'm here with you")
+                                "processing" -> txt("বার্তা AI আপনার প্রশ্নের উত্তর রেডি করছে...", "Barta AI is processing response...")
+                                "speaking" -> txt("অনুগ্রহ করে শুনুন...", "Please listen...")
+                                "error" -> if (voiceErrorMessage.isNotEmpty()) voiceErrorMessage else txt("দুঃখিত, আবার চেষ্টা করুন!", "Sorry, please try again!")
+                                else -> txt("আমি শুনছি আপনার যেকোনো কথা বা প্রশ্ন", "Waiting to assist you with any questions")
+                            },
+                            fontSize = 14.sp,
+                            color = if (isDarkTheme) Color.LightGray else Color.Gray,
+                            textAlign = TextAlign.Center
+                        )
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        // Real-time formatted ticking timer
+                        var timerSeconds by remember { mutableStateOf(0) }
+                        LaunchedEffect(voiceState) {
+                            if (voiceState == "listening") {
+                                timerSeconds = 0
+                                while (voiceState == "listening") {
+                                    kotlinx.coroutines.delay(1000L)
+                                    timerSeconds += 1
+                                }
+                            } else {
+                                timerSeconds = 0
+                            }
+                        }
+                        val timerString = remember(timerSeconds) {
+                            val mins = timerSeconds / 60
+                            val secs = timerSeconds % 60
+                            String.format("%02d:%02d", mins, secs)
+                        }
+
+                        Text(
+                            text = timerString,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = primaryColor
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Small scrolling text transcripts box so user can read what's spoken/being said
+                        if (voiceUserText.isNotEmpty() || voiceAiResponseText.isNotEmpty() || voiceErrorMessage.isNotEmpty()) {
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 84.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isDarkTheme) Color(0xFF1E293B) else Color(0xFFEEF3F1)
+                                ),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(0.5.dp, primaryColor.copy(alpha = 0.15f))
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(10.dp)
+                                        .verticalScroll(rememberScrollState())
+                                ) {
+                                    if (voiceErrorMessage.isNotEmpty()) {
+                                        Text(voiceErrorMessage, color = Color.Red, fontSize = 12.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                                    } else {
+                                        if (voiceUserText.isNotEmpty()) {
+                                            Text(
+                                                text = txt("আপনি: $voiceUserText", "You: $voiceUserText"),
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isDarkTheme) Color.LightGray else Color.DarkGray
+                                            )
+                                        }
+                                        if (voiceAiResponseText.isNotEmpty() && voiceState != "processing") {
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Text(
+                                                text = txt("বার্তা AI: $voiceAiResponseText", "Barta AI: $voiceAiResponseText"),
+                                                fontSize = 12.sp,
+                                                color = if (isDarkTheme) Color.White else Color(0xFF1E293B)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // 4. ACTION PANEL CONTAINER (Elevated action panel card)
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isDarkTheme) Color(0xFF1E293B) else Color.White
+                        ),
+                        shape = RoundedCornerShape(24.dp),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                        border = BorderStroke(1.dp, if (isDarkTheme) Color.DarkGray.copy(alpha = 0.3f) else Color.LightGray.copy(alpha = 0.3f))
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 12.dp, horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Cancel button (✕)
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.clickable {
+                                    speechRecognizer?.cancel()
+                                    tts?.stop()
+                                    voiceState = "idle"
+                                    voiceUserText = ""
+                                    voiceAiResponseText = ""
+                                    voiceErrorMessage = ""
+                                }
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .background(
+                                            color = if (isDarkTheme) Color(0xFF0F172A) else Color(0xFFF1F5F9),
+                                            shape = CircleShape
+                                        )
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Cancel",
+                                        tint = if (isDarkTheme) Color.LightGray else Color.DarkGray,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = txt("বাতিল", "Cancel"),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isDarkTheme) Color.LightGray else Color.DarkGray
+                                )
+                            }
+
+                            // Stop Button (■) - custom styled premium teal button
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.clickable {
+                                    speechRecognizer?.cancel()
+                                    tts?.stop()
+                                    voiceState = "idle"
+                                }
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .size(54.dp)
+                                        .background(
+                                            color = primaryColor,
+                                            shape = CircleShape
+                                        )
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Stop,
+                                        contentDescription = "Stop",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = txt("থামুন", "Stop"),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = primaryColor
+                                )
+                            }
+
+                            // Keyboard button (লিখে বলুন)
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.clickable {
+                                    speechRecognizer?.cancel()
+                                    tts?.stop()
+                                    isVoiceChatActive = false
+                                }
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .background(
+                                            color = if (isDarkTheme) Color(0xFF0F172A) else Color(0xFFF1F5F9),
+                                            shape = CircleShape
+                                        )
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Keyboard,
+                                        contentDescription = "Write",
+                                        tint = if (isDarkTheme) Color.LightGray else Color.DarkGray,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = txt("লিখে বলুন", "Write"),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isDarkTheme) Color.LightGray else Color.DarkGray
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // 5. SUGGESTION CONTAINER AT THE VERY BOTTOM
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                color = if (isDarkTheme) Color(0xFF1E293B).copy(alpha = 0.4f) else Color(0xFFEEF5F2).copy(alpha = 0.5f),
+                                shape = RoundedCornerShape(16.dp)
+                            )
+                            .border(
+                                BorderStroke(0.5.dp, primaryColor.copy(alpha = 0.15f)),
+                                RoundedCornerShape(16.dp)
+                            )
+                            .padding(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .size(30.dp)
+                                        .background(primaryColor.copy(alpha = 0.1f), CircleShape)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Lightbulb,
+                                        contentDescription = null,
+                                        tint = primaryColor,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = txt("আপনি চাইলে জানতে পারেন", "You can ask about"),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isDarkTheme) Color.LightGray else Color(0xFF1E293B)
+                                )
+                            }
+
+                            // Shuffle Button
+                            IconButton(
+                                onClick = {
+                                    currentSuggestions = allSuggestions.shuffled().take(3)
+                                },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = "Shuffle suggestions",
+                                    tint = primaryColor,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Render suggestion chips horizontally scrolling
+                        androidx.compose.foundation.lazy.LazyRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            contentPadding = PaddingValues(horizontal = 2.dp)
+                        ) {
+                            items(currentSuggestions) { suggestionText ->
+                                Box(
+                                    modifier = Modifier
+                                        .background(
+                                            color = if (isDarkTheme) Color(0xFF101B2B) else Color.White,
+                                            shape = RoundedCornerShape(12.dp)
+                                        )
+                                        .border(
+                                            BorderStroke(0.5.dp, if (isDarkTheme) Color.DarkGray else Color.LightGray.copy(alpha = 0.7f)),
+                                            RoundedCornerShape(12.dp)
+                                        )
+                                        .clickable {
+                                            submitVoiceQuery(suggestionText)
+                                        }
+                                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                                ) {
+                                    Text(
+                                        text = suggestionText,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = if (isDarkTheme) Color.White else Color(0xFF2E7D32),
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
