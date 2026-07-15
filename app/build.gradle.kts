@@ -91,6 +91,10 @@ android {
     }
   }
 
+  androidResources {
+    noCompress.add("bmp")
+  }
+
   lint {
     abortOnError = false
     checkReleaseBuilds = false
@@ -134,6 +138,10 @@ dependencies {
   implementation(libs.converter.moshi)
   implementation(libs.firebase.firestore)
   implementation(libs.firebase.auth)
+  implementation(libs.play.services.auth)
+  implementation(libs.androidx.credentials)
+  implementation(libs.androidx.credentials.play.services.auth)
+  implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
   implementation(libs.firebase.storage)
   implementation(libs.firebase.messaging)
   // implementation(libs.firebase.ai)
@@ -235,5 +243,27 @@ tasks.register("prepareApkDownload") {
         } else {
             println("FAILED: APK download file could not be created!")
         }
+
+        // Start the Node.js APK Download Server if not already running on port 3000
+        try {
+            val process = Runtime.getRuntime().exec(arrayOf("pgrep", "-f", "node server.js"))
+            val hasNodeServer = process.inputStream.bufferedReader().readText().trim().isNotEmpty()
+            if (!hasNodeServer) {
+                println("Starting Node.js APK Download Server...")
+                Runtime.getRuntime().exec(arrayOf("node", "server.js"), null, rootDirFile)
+                println("Node.js server started in background.")
+            } else {
+                println("Node.js APK Download Server is already running.")
+            }
+        } catch (e: Exception) {
+            println("Could not auto-start Node.js server: ${e.message}")
+        }
     }
 }
+
+tasks.configureEach {
+    if (name == "assembleDebug" || name == "assembleRelease") {
+        finalizedBy("prepareApkDownload")
+    }
+}
+

@@ -83,6 +83,56 @@ import androidx.activity.result.PickVisualMediaRequest
 import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.credentials.CredentialManager
+import androidx.credentials.GetCredentialRequest
+import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+
+fun triggerGoogleSignIn(
+    context: android.content.Context,
+    coroutineScope: kotlinx.coroutines.CoroutineScope,
+    viewModel: ChatViewModel,
+    onResult: (String?) -> Unit
+) {
+    val credentialManager = CredentialManager.create(context)
+    val webClientId = "1077849519942-88i4ndunf6uofsn92aavki9ic7433842.apps.googleusercontent.com" // Default derived Web Client ID
+    
+    val googleIdOption = GetGoogleIdOption.Builder()
+        .setFilterByAuthorizedAccounts(false)
+        .setServerClientId(webClientId)
+        .setAutoSelectEnabled(false)
+        .build()
+
+    val request = GetCredentialRequest.Builder()
+        .addCredentialOption(googleIdOption)
+        .build()
+
+    coroutineScope.launch {
+        try {
+            val result = credentialManager.getCredential(
+                context = context,
+                request = request
+            )
+            val credential = result.credential
+            if (credential is GoogleIdTokenCredential) {
+                val idToken = credential.idToken
+                viewModel.loginWithGoogleToken(idToken) { error ->
+                    onResult(error)
+                }
+            } else {
+                onResult("Unsupported credential type received.")
+            }
+        } catch (e: Exception) {
+            val isBn = viewModel.appLanguage.value == "bn"
+            val errMsg = e.localizedMessage ?: "Google Sign-In failed"
+            if (errMsg.contains("16:") || errMsg.contains("Canceled") || errMsg.contains("cancel")) {
+                onResult(if (isBn) "গুগল সাইন-ইন বাতিল করা হয়েছে।" else "Google Sign-In cancelled.")
+            } else {
+                onResult(errMsg)
+            }
+        }
+    }
+}
 
 @Composable
 fun getTranslator(viewModel: ChatViewModel): (String, String) -> String {
@@ -738,24 +788,15 @@ fun OnboardingWelcomePage(txt: (String, String) -> String) {
             .padding(horizontal = 16.dp)
     ) {
         // Decorative Illustration Avatar
-        Box(
+        Image(
+            painter = painterResource(id = R.drawable.img_onboarding_welcome),
+            contentDescription = "Welcome Onboarding",
             modifier = Modifier
                 .size(150.dp)
-                .background(WhatsAppTealVal.copy(alpha = 0.08f), CircleShape),
-            contentAlignment = Alignment.Center
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(110.dp)
-                    .background(WhatsAppTealVal.copy(alpha = 0.15f), CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "🇧🇩",
-                    fontSize = 52.sp
-                )
-            }
-        }
+                .clip(CircleShape)
+                .border(2.dp, WhatsAppTealVal, CircleShape),
+            contentScale = androidx.compose.ui.layout.ContentScale.Crop
+        )
 
         Spacer(modifier = Modifier.height(28.dp))
 
@@ -916,6 +957,7 @@ fun AuthScreen(
     viewModel: ChatViewModel
 ) {
     val txt = getTranslator(viewModel = viewModel)
+    val coroutineScope = rememberCoroutineScope()
     val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
     var isSignUp by remember { mutableStateOf(false) }
     var signUpStep by remember { mutableIntStateOf(1) }
@@ -1056,17 +1098,28 @@ fun AuthScreen(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp)
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .imePadding()
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
+    Box(
+        modifier = Modifier.fillMaxSize()
     ) {
+        Image(
+            painter = painterResource(id = R.drawable.img_splash_bg),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+            alpha = 0.08f
+        )
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp)
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .imePadding()
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
         // Dynamic Language Toggle at the top right of AuthScreen
         Row(
             modifier = Modifier
@@ -1098,6 +1151,23 @@ fun AuthScreen(
                 modifier = Modifier
                     .clickable { viewModel.setAppLanguage("bn") }
                     .padding(4.dp)
+            )
+        }
+
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 16.dp)
+                .clip(RoundedCornerShape(16.dp)),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Image(
+                painter = painterResource(id = R.drawable.img_welcome_hero),
+                contentDescription = "Welcome Banner",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(130.dp),
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop
             )
         }
 
@@ -1363,7 +1433,7 @@ fun AuthScreen(
                                     focusedLabelColor = WhatsAppTealVal,
                                     unfocusedLabelColor = Color.Gray
                                 ),
-                                modifier = Modifier
+                                 modifier = Modifier
                                     .weight(1f)
                                     .testTag("signup_last_name_input")
                                     .padding(start = 4.dp)
@@ -1371,6 +1441,61 @@ fun AuthScreen(
                         }
 
                         // Phone number field removed since it is no longer required
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            HorizontalDivider(modifier = Modifier.weight(1f), color = Color.LightGray.copy(alpha = 0.5f))
+                            Text(
+                                text = txt("অথবা", "OR"),
+                                fontSize = 12.sp,
+                                color = Color.Gray,
+                                modifier = Modifier.padding(horizontal = 16.dp)
+                            )
+                            HorizontalDivider(modifier = Modifier.weight(1f), color = Color.LightGray.copy(alpha = 0.5f))
+                        }
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        OutlinedButton(
+                            onClick = {
+                                isLoading = true
+                                errorMessage = null
+                                triggerGoogleSignIn(context, coroutineScope, viewModel) { error ->
+                                    isLoading = false
+                                    if (error != null) {
+                                        errorMessage = error
+                                    } else {
+                                        Toast.makeText(context, txt("নিবন্ধন ও লগইন সফল হয়েছে!", "Registration and login successful!"), Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .testTag("google_signup_button"),
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, Color.LightGray),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
+                            enabled = !isLoading
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Image(
+                                    painter = painterResource(id = R.drawable.ic_google_logo),
+                                    contentDescription = "Google Logo",
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = txt("গুগল একাউন্ট দিয়ে এগিয়ে যান", "Continue with Google"),
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 14.sp
+                                )
+                            }
+                        }
                     } else if (signUpStep == 2) {
                         Text(
                             text = txt("নিরাপত্তা ইমেইল", "Security Email"),
@@ -1867,10 +1992,67 @@ fun AuthScreen(
                             )
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        HorizontalDivider(modifier = Modifier.weight(1f), color = Color.LightGray.copy(alpha = 0.5f))
+                        Text(
+                            text = txt("অথবা", "OR"),
+                            fontSize = 12.sp,
+                            color = Color.Gray,
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
+                        HorizontalDivider(modifier = Modifier.weight(1f), color = Color.LightGray.copy(alpha = 0.5f))
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    OutlinedButton(
+                        onClick = {
+                            isLoading = true
+                            errorMessage = null
+                            triggerGoogleSignIn(context, coroutineScope, viewModel) { error ->
+                                isLoading = false
+                                if (error != null) {
+                                    errorMessage = error
+                                } else {
+                                    Toast.makeText(context, txt("লগইন সফল হয়েছে!", "Login successful!"), Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("google_login_button"),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, Color.LightGray),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
+                        enabled = !isLoading
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Image(
+                                painter = painterResource(id = R.drawable.ic_google_logo),
+                                contentDescription = "Google Logo",
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = txt("গুগল একাউন্ট দিয়ে এগিয়ে যান", "Continue with Google"),
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 14.sp
+                            )
+                        }
+                    }
                 }
             }
         }
     }
+}
 
     // Forgot Password Reset Email Dialog
     if (showForgotPasswordDialog) {
@@ -3894,29 +4076,39 @@ fun SettingsTabScreen(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             shape = RoundedCornerShape(12.dp)
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                AvatarView(name = myName, base64 = myProfilePic, size = 60)
-                Spacer(modifier = Modifier.width(16.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(myName, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = MaterialTheme.colorScheme.onSurface)
-                    Text(myEmail, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                }
-                IconButton(
-                    onClick = {
-                        if (!isConnected) {
-                            Toast.makeText(viewModel.getApplication(), txt("অফলাইন মোডে সেটিংস পরিবর্তন করা যাবে না", "Settings cannot be changed in offline mode"), Toast.LENGTH_SHORT).show()
-                        } else {
-                            showPasswordChangeDialog = true
-                        }
-                    },
-                    modifier = Modifier.testTag("change_password_button")
+            Column {
+                Image(
+                    painter = painterResource(id = R.drawable.img_profile_cover),
+                    contentDescription = null,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(110.dp),
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Default.Edit, contentDescription = "Change Password", tint = WhatsAppTealVal)
+                    AvatarView(name = myName, base64 = myProfilePic, size = 60)
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(myName, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = MaterialTheme.colorScheme.onSurface)
+                        Text(myEmail, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                    }
+                    IconButton(
+                        onClick = {
+                            if (!isConnected) {
+                                Toast.makeText(viewModel.getApplication(), txt("অফলাইন মোডে সেটিংস পরিবর্তন করা যাবে না", "Settings cannot be changed in offline mode"), Toast.LENGTH_SHORT).show()
+                            } else {
+                                showPasswordChangeDialog = true
+                            }
+                        },
+                        modifier = Modifier.testTag("change_password_button")
+                    ) {
+                        Icon(Icons.Default.Edit, contentDescription = "Change Password", tint = WhatsAppTealVal)
+                    }
                 }
             }
         }
@@ -6772,11 +6964,28 @@ fun ChatWindowScreen(
         else -> if (isDarkTheme) PremiumBackgroundDark else WhatsAppGrayBackgroundVal
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(wallpaperColor)
+    Box(
+        modifier = Modifier.fillMaxSize()
     ) {
+        if (chatWallpaper == "default") {
+            Image(
+                painter = painterResource(id = R.drawable.img_chat_wallpaper),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                alpha = 0.35f
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(wallpaperColor)
+            )
+        }
+
+        Column(
+            modifier = Modifier.fillMaxSize()
+        ) {
         // Chat Header with details
         TopAppBar(
             navigationIcon = {
@@ -7716,6 +7925,7 @@ fun ChatWindowScreen(
                 }
             }
         )
+        }
     }
 }
 
@@ -8240,7 +8450,7 @@ fun AvatarView(
                 .size(size.dp)
                 .clip(CircleShape)
                 .background(
-                    Brush.linearGradient(
+                    androidx.compose.ui.graphics.Brush.linearGradient(
                         colors = listOf(
                             Color(0xFF8B5CF6), // Deep violet / Indigo
                             Color(0xFF3B82F6), // Electric Blue

@@ -90,7 +90,7 @@ class ChatRepository(
             var projectId = sharedPrefs.getString("firebase_project_id", "") ?: ""
             var appId = sharedPrefs.getString("firebase_app_id", "") ?: ""
 
-            if (apiKey.isEmpty() || projectId.isEmpty() || appId.isEmpty() || projectId == "barta-chat-927ec") {
+            if (apiKey.isEmpty() || projectId.isEmpty() || appId.isEmpty()) {
                 apiKey = "AIzaSyAYJIASscRP9rvn0q2lJ88oPQTZYRBHpvs"
                 projectId = "barta-a3ac1"
                 appId = "1:1077849519942:web:f80447c4c1e9a740b89747"
@@ -187,7 +187,7 @@ class ChatRepository(
         var apiKey = sharedPrefs.getString("firebase_api_key", "") ?: ""
         var projectId = sharedPrefs.getString("firebase_project_id", "") ?: ""
         var appId = sharedPrefs.getString("firebase_app_id", "") ?: ""
-        if (apiKey.isEmpty() || projectId.isEmpty() || appId.isEmpty() || projectId == "barta-chat-927ec") {
+        if (apiKey.isEmpty() || projectId.isEmpty() || appId.isEmpty()) {
             apiKey = "AIzaSyAYJIASscRP9rvn0q2lJ88oPQTZYRBHpvs"
             projectId = "barta-a3ac1"
             appId = "1:1077849519942:web:f80447c4c1e9a740b89747"
@@ -1124,37 +1124,38 @@ class ChatRepository(
     private fun getFriendlyAuthErrorMessage(exception: Throwable): String {
         val language = sharedPrefs.getString("app_language", "bn") ?: "bn"
         val isBn = language == "bn"
+        val errorMsg = exception.localizedMessage ?: exception.message ?: ""
+        val detail = if (errorMsg.isNotEmpty()) " (${errorMsg})" else ""
         return when (exception) {
             is com.google.firebase.auth.FirebaseAuthInvalidUserException -> {
-                if (isBn) "এই ইমেইল এড্রেস দিয়ে কোনো অ্যাকাউন্ট খুঁজে পাওয়া যায়নি। অনুগ্রহ করে প্রথমে সাইন আপ করুন।" 
-                else "No registered account was found with this email address. Please sign up first."
+                if (isBn) "এই ইমেইল এড্রেস দিয়ে কোনো অ্যাকাউন্ট খুঁজে পাওয়া যায়নি। অনুগ্রহ করে প্রথমে সাইন আপ করুন।$detail" 
+                else "No registered account was found with this email address. Please sign up first.$detail"
             }
             is com.google.firebase.auth.FirebaseAuthInvalidCredentialsException -> {
-                if (isBn) "ভুল ইমেইল এড্রেস বা পাসওয়ার্ড! অনুগ্রহ করে সঠিক তথ্য দিয়ে পুনরায় চেষ্টা করুন।" 
-                else "Incorrect email address or password. Please verify your credentials and try again."
+                if (isBn) "ভুল ইমেইল এড্রেস বা পাসওয়ার্ড! অনুগ্রহ করে সঠিক তথ্য দিয়ে পুনরায় চেষ্টা করুন।$detail" 
+                else "Incorrect email address or password. Please verify your credentials and try again.$detail"
             }
             is com.google.firebase.auth.FirebaseAuthUserCollisionException -> {
-                if (isBn) "এই ইমেইল এড্রেস দিয়ে ইতিমধ্যেই একটি অ্যাকাউন্ট তৈরি করা আছে। অনুগ্রহ করে লগইন করুন।" 
-                else "An account with this email address already exists. Please login instead."
+                if (isBn) "এই ইমেইল এড্রেস দিয়ে ইতিমধ্যেই একটি অ্যাকাউন্ট তৈরি করা আছে। অনুগ্রহ করে লগইন করুন।$detail" 
+                else "An account with this email address already exists. Please login instead.$detail"
             }
             is com.google.firebase.auth.FirebaseAuthWeakPasswordException -> {
-                if (isBn) "পাসওয়ার্ড অবশ্যই কমপক্ষে ৬ অক্ষরের হতে হবে।" 
-                else "Password must be at least 6 characters long."
+                if (isBn) "পাসওয়ার্ড অবশ্যই কমপক্ষে ৬ অক্ষরের হতে হবে।$detail" 
+                else "Password must be at least 6 characters long.$detail"
             }
             is com.google.firebase.FirebaseNetworkException -> {
-                if (isBn) "নেটওয়ার্ক সংযোগ ত্রুটি! অনুগ্রহ করে আপনার ইন্টারনেট সংযোগটি চেক করুন।" 
-                else "A network connection error occurred. Please check your internet connection and try again."
+                if (isBn) "নেটওয়ার্ক সংযোগ ত্রুটি! অনুগ্রহ করে আপনার ইন্টারনেট সংযোগটি চেক করুন।$detail" 
+                else "A network connection error occurred. Please check your internet connection and try again.$detail"
             }
             else -> {
-                val msg = exception.localizedMessage ?: ""
-                if (msg.contains("API key", ignoreCase = true) || msg.contains("API_KEY", ignoreCase = true)) {
-                    if (isBn) "ফায়ারবেস এপিআই কী নিষ্ক্রিয় বা অনুপস্থিত। অনুগ্রহ করে এপিআই কী সেট করুন।" 
-                    else "Firebase API key is missing or invalid. Please check your configuration."
-                } else if (msg.contains("credential", ignoreCase = true) || msg.contains("expired", ignoreCase = true) || msg.contains("malformed", ignoreCase = true)) {
-                    if (isBn) "ভুল ইমেইল এড্রেস বা পাসওয়ার্ড! অনুগ্রহ করে সঠিক তথ্য দিয়ে পুনরায় চেষ্টা করুন।" 
-                    else "Incorrect email address or password. Please verify your credentials and try again."
+                if (errorMsg.contains("API key", ignoreCase = true) || errorMsg.contains("API_KEY", ignoreCase = true)) {
+                    if (isBn) "ফায়ারবেস এপিআই কী নিষ্ক্রিয় বা অনুপস্থিত। অনুগ্রহ করে এপিআই কী সেট করুন।$detail" 
+                    else "Firebase API key is missing or invalid. Please check your configuration.$detail"
+                } else if (errorMsg.contains("credential", ignoreCase = true) || errorMsg.contains("expired", ignoreCase = true) || errorMsg.contains("malformed", ignoreCase = true)) {
+                    if (isBn) "ভুল ইমেইল এড্রেস বা পাসওয়ার্ড! অনুগ্রহ করে সঠিক তথ্য দিয়ে পুনরায় চেষ্টা করুন।$detail" 
+                    else "Incorrect email address or password. Please verify your credentials and try again.$detail"
                 } else {
-                    msg.ifBlank { if (isBn) "অথেন্টিকেশন ব্যর্থ হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন।" else "Authentication failed. Please try again." }
+                    errorMsg.ifBlank { if (isBn) "অথেন্টিকেশন ব্যর্থ হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন।" else "Authentication failed. Please try again." }
                 }
             }
         }
@@ -1213,6 +1214,7 @@ class ChatRepository(
                                         "profilePicBase64" to profilePicBase64,
                                         "status" to "বার্তা (Chat) ব্যবহার করছি!",
                                         "createdAt" to createdAt,
+                                        "passwordSecureHash" to sha256(passwordHash),
                                         "isSimulated" to false
                                     )
                                     db.collection("users").document(phone.trim()).set(data)
@@ -1262,6 +1264,133 @@ class ChatRepository(
             }
     }
 
+    fun sha256(input: String): String {
+        return try {
+            val bytes = input.toByteArray()
+            val md = java.security.MessageDigest.getInstance("SHA-256")
+            val digest = md.digest(bytes)
+            digest.fold("") { str, it -> str + "%02x".format(it) }
+        } catch (e: Exception) {
+            input
+        }
+    }
+
+    suspend fun loginWithGoogleCredential(idToken: String): String? = suspendCancellableCoroutine { continuation ->
+        val auth = firebaseAuth
+        val db = firestore
+        if (auth == null || db == null) {
+            continuation.resume("Firebase is not configured correctly on this device.")
+            return@suspendCancellableCoroutine
+        }
+
+        db.enableNetwork()
+
+        val isBn = sharedPrefs.getString("app_language", "bn") == "bn"
+        val credential = com.google.firebase.auth.GoogleAuthProvider.getCredential(idToken, null)
+        auth.signInWithCredential(credential)
+            .addOnSuccessListener { authResult ->
+                val user = authResult.user
+                if (user != null) {
+                    val uid = user.uid
+                    val googleEmail = (user.email ?: "").trim().lowercase()
+                    val googleName = user.displayName ?: "Google User"
+                    
+                    if (googleEmail.isEmpty()) {
+                        continuation.resume(if (isBn) "গুগল সাইন-ইন সফল হয়েছে কিন্তু ইমেইল পাওয়া যায়নি।" else "Google Sign-In succeeded but email address was not provided.")
+                        return@addOnSuccessListener
+                    }
+
+                    // Look up existing user by email in Firestore
+                    db.collection("users").whereEqualTo("email", googleEmail).get()
+                        .addOnSuccessListener { querySnapshot ->
+                            if (!querySnapshot.isEmpty) {
+                                // Existing user found
+                                val doc = querySnapshot.documents.first()
+                                val phone = doc.getString("phone") ?: ""
+                                val name = doc.getString("name") ?: googleName
+                                val pic = doc.getString("profilePicBase64") ?: ""
+                                val status = doc.getString("status") ?: "বার্তা (Chat) ব্যবহার করছি!"
+                                val createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis()
+
+                                // Update UID in Firestore if missing or mismatched
+                                if (uid.isNotEmpty() && doc.getString("uid") != uid) {
+                                    db.collection("users").document(phone).update("uid", uid)
+                                }
+
+                                repositoryScope.launch {
+                                    // Store locally in Room Database
+                                    val localUser = LocalUser(phone, name, "", pic, status)
+                                    userDao.insertUser(localUser)
+
+                                    // Save to SharedPreferences
+                                    sharedPrefs.edit()
+                                        .putString("logged_user_phone", phone)
+                                        .putString("logged_user_display_name", name)
+                                        .putString("logged_user_profile_pic", pic)
+                                        .putString("logged_user_status_message", status)
+                                        .putString("logged_user_email", googleEmail)
+                                        .putString("logged_user_uid", uid)
+                                        .putLong("logged_user_created_at", createdAt)
+                                        .apply()
+
+                                    continuation.resume(null) // Success
+                                }
+                            } else {
+                                // Brand new user, generate deterministic 11-digit pseudo phone number
+                                val emailHash = Math.abs(googleEmail.hashCode()) % 1000000000
+                                val cleanPhone = "01" + String.format(java.util.Locale.US, "%09d", emailHash)
+                                val createdAt = System.currentTimeMillis()
+
+                                val data = hashMapOf<String, Any>(
+                                    "uid" to uid,
+                                    "phone" to cleanPhone,
+                                    "name" to googleName,
+                                    "email" to googleEmail,
+                                    "profilePicBase64" to "",
+                                    "status" to "বার্তা (Chat) ব্যবহার করছি!",
+                                    "createdAt" to createdAt,
+                                    "passwordSecureHash" to "",
+                                    "isSimulated" to false
+                                )
+
+                                db.collection("users").document(cleanPhone).set(data)
+                                    .addOnSuccessListener {
+                                        repositoryScope.launch {
+                                            // Store locally in Room Database
+                                            val localUser = LocalUser(cleanPhone, googleName, "", "", "বার্তা (Chat) ব্যবহার করছি!")
+                                            userDao.insertUser(localUser)
+
+                                            // Save to SharedPreferences
+                                            sharedPrefs.edit()
+                                                .putString("logged_user_phone", cleanPhone)
+                                                .putString("logged_user_display_name", googleName)
+                                                .putString("logged_user_profile_pic", "")
+                                                .putString("logged_user_status_message", "বার্তা (Chat) ব্যবহার করছি!")
+                                                .putString("logged_user_email", googleEmail)
+                                                .putString("logged_user_uid", uid)
+                                                .putLong("logged_user_created_at", createdAt)
+                                                .apply()
+
+                                            continuation.resume(null) // Success
+                                        }
+                                    }
+                                    .addOnFailureListener { e ->
+                                        continuation.resume("Failed to create user profile in Firestore: ${e.localizedMessage}")
+                                    }
+                            }
+                        }
+                        .addOnFailureListener { e ->
+                            continuation.resume("Failed to check existing profile: ${e.localizedMessage}")
+                        }
+                } else {
+                    continuation.resume("Firebase Google sign-in succeeded but user is null.")
+                }
+            }
+            .addOnFailureListener { exception ->
+                continuation.resume(getFriendlyAuthErrorMessage(exception))
+            }
+    }
+
     suspend fun loginWithFirebaseAuth(
         emailOrPhone: String,
         passwordHash: String
@@ -1280,6 +1409,7 @@ class ChatRepository(
 
         val cleanInput = emailOrPhone.trim()
         val isEmail = cleanInput.contains("@")
+        val isBn = sharedPrefs.getString("app_language", "bn") == "bn"
 
         if (isEmail) {
             // Log in with email directly
@@ -1300,6 +1430,12 @@ class ChatRepository(
                                 // Update UID in Firestore if missing
                                 if (uid.isNotEmpty() && doc.getString("uid") != uid) {
                                     db.collection("users").document(phone).update("uid", uid)
+                                }
+
+                                // Securely backfill passwordSecureHash if it was missing
+                                val storedHash = doc.getString("passwordSecureHash") ?: ""
+                                if (storedHash.isEmpty()) {
+                                    db.collection("users").document(phone).update("passwordSecureHash", sha256(passwordHash))
                                 }
 
                                 repositoryScope.launch {
@@ -1329,7 +1465,77 @@ class ChatRepository(
                         }
                 }
                 .addOnFailureListener { exception ->
-                    continuation.resume(getFriendlyAuthErrorMessage(exception))
+                    // Fallback migration check for old Gmail/Email accounts that exist in Firestore but not Firebase Auth
+                    db.collection("users").whereEqualTo("email", cleanInput.lowercase()).get()
+                        .addOnSuccessListener { querySnapshot ->
+                            if (!querySnapshot.isEmpty) {
+                                val doc = querySnapshot.documents.first()
+                                val storedHash = doc.getString("passwordSecureHash") ?: ""
+                                val inputHash = sha256(passwordHash)
+                                if (storedHash.isNotEmpty() && storedHash == inputHash) {
+                                    // Password matches the Firestore record! Automatically register in Firebase Auth to migrate
+                                    auth.createUserWithEmailAndPassword(cleanInput.lowercase(), passwordHash)
+                                        .addOnSuccessListener { authResult ->
+                                            val uid = authResult.user?.uid ?: ""
+                                            val phone = doc.getString("phone") ?: ""
+                                            val name = doc.getString("name") ?: "ব্যবহারকারী"
+                                            val pic = doc.getString("profilePicBase64") ?: ""
+                                            val status = doc.getString("status") ?: "বার্তা (Chat) ব্যবহার করছি!"
+                                            val createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis()
+
+                                            db.collection("users").document(phone).update("uid", uid)
+
+                                            repositoryScope.launch {
+                                                val localUser = LocalUser(phone, name, passwordHash, pic, status)
+                                                userDao.insertUser(localUser)
+
+                                                sharedPrefs.edit()
+                                                    .putString("logged_user_phone", phone)
+                                                    .putString("logged_user_display_name", name)
+                                                    .putString("logged_user_profile_pic", pic)
+                                                    .putString("logged_user_status_message", status)
+                                                    .putString("logged_user_email", cleanInput.lowercase())
+                                                    .putString("logged_user_uid", uid)
+                                                    .putLong("logged_user_created_at", createdAt)
+                                                    .apply()
+
+                                                continuation.resume(null) // Migrated successfully and logged in!
+                                            }
+                                        }
+                                        .addOnFailureListener { createException ->
+                                            // Fallback login so they are never blocked
+                                            val phone = doc.getString("phone") ?: ""
+                                            val name = doc.getString("name") ?: "ব্যবহারকারী"
+                                            val pic = doc.getString("profilePicBase64") ?: ""
+                                            val status = doc.getString("status") ?: "বার্তা (Chat) ব্যবহার করছি!"
+                                            val createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis()
+                                            repositoryScope.launch {
+                                                val localUser = LocalUser(phone, name, passwordHash, pic, status)
+                                                userDao.insertUser(localUser)
+
+                                                sharedPrefs.edit()
+                                                    .putString("logged_user_phone", phone)
+                                                    .putString("logged_user_display_name", name)
+                                                    .putString("logged_user_profile_pic", pic)
+                                                    .putString("logged_user_status_message", status)
+                                                    .putString("logged_user_email", cleanInput.lowercase())
+                                                    .putString("logged_user_uid", "fallback_uid_$phone")
+                                                    .putLong("logged_user_created_at", createdAt)
+                                                    .apply()
+
+                                                continuation.resume(null)
+                                            }
+                                        }
+                                } else {
+                                    continuation.resume(getFriendlyAuthErrorMessage(exception))
+                                }
+                            } else {
+                                continuation.resume(getFriendlyAuthErrorMessage(exception))
+                            }
+                        }
+                        .addOnFailureListener {
+                            continuation.resume(getFriendlyAuthErrorMessage(exception))
+                        }
                 }
         } else {
             // Treated as phone number, automatically identify the associated email first
@@ -1354,6 +1560,12 @@ class ChatRepository(
                                 // Update UID in Firestore if missing
                                 if (uid.isNotEmpty() && document.getString("uid") != uid) {
                                     db.collection("users").document(cleanInput).update("uid", uid)
+                                }
+
+                                // Securely backfill passwordSecureHash if it was missing
+                                val storedHash = document.getString("passwordSecureHash") ?: ""
+                                if (storedHash.isEmpty()) {
+                                    db.collection("users").document(cleanInput).update("passwordSecureHash", sha256(passwordHash))
                                 }
 
                                 repositoryScope.launch {
@@ -1381,9 +1593,11 @@ class ChatRepository(
                                 }
                             }
                             .addOnFailureListener { signInException ->
-                                // If the user was registered in Firestore but never created in FirebaseAuth (older accounts migrating),
-                                // let's automatically create the FirebaseAuth account now!
-                                if (associatedEmail.isNullOrBlank()) {
+                                // Check Firestore secure hash as a fallback migration check
+                                val storedHash = document.getString("passwordSecureHash") ?: ""
+                                val inputHash = sha256(passwordHash)
+                                if (storedHash.isNotEmpty() && storedHash == inputHash) {
+                                    // Password matches Firestore! Let's automatically register in Firebase Auth to migrate
                                     auth.createUserWithEmailAndPassword(finalEmail, passwordHash)
                                         .addOnSuccessListener { authResult ->
                                             val uid = authResult.user?.uid ?: ""
@@ -1391,6 +1605,13 @@ class ChatRepository(
                                             val pic = document.getString("profilePicBase64") ?: ""
                                             val status = document.getString("status") ?: "বার্তা (Chat) ব্যবহার করছি!"
                                             val createdAt = document.getLong("createdAt") ?: System.currentTimeMillis()
+
+                                            db.collection("users").document(cleanInput).update(
+                                                mapOf(
+                                                    "uid" to uid,
+                                                    "email" to finalEmail
+                                                )
+                                            )
 
                                             repositoryScope.launch {
                                                 val localUser = LocalUser(cleanInput, name, passwordHash, pic, status)
@@ -1406,25 +1627,38 @@ class ChatRepository(
                                                     .putLong("logged_user_created_at", createdAt)
                                                     .apply()
 
-                                                db.collection("users").document(cleanInput).update(
-                                                    mapOf(
-                                                        "email" to finalEmail,
-                                                        "uid" to uid
-                                                    )
-                                                )
-
-                                                continuation.resume(null) // Success
+                                                continuation.resume(null) // Migrated successfully and logged in!
                                             }
                                         }
                                         .addOnFailureListener { createException ->
-                                            continuation.resume(getFriendlyAuthErrorMessage(createException))
+                                            // Fallback local-only login so user is never blocked
+                                            val name = document.getString("name") ?: "ব্যবহারকারী"
+                                            val pic = document.getString("profilePicBase64") ?: ""
+                                            val status = document.getString("status") ?: "বার্তা (Chat) ব্যবহার করছি!"
+                                            val createdAt = document.getLong("createdAt") ?: System.currentTimeMillis()
+                                            repositoryScope.launch {
+                                                val localUser = LocalUser(cleanInput, name, passwordHash, pic, status)
+                                                userDao.insertUser(localUser)
+
+                                                sharedPrefs.edit()
+                                                    .putString("logged_user_phone", cleanInput)
+                                                    .putString("logged_user_display_name", name)
+                                                    .putString("logged_user_profile_pic", pic)
+                                                    .putString("logged_user_status_message", status)
+                                                    .putString("logged_user_email", finalEmail)
+                                                    .putString("logged_user_uid", "fallback_uid_$cleanInput")
+                                                    .putLong("logged_user_created_at", createdAt)
+                                                    .apply()
+
+                                                continuation.resume(null)
+                                            }
                                         }
                                 } else {
                                     continuation.resume(getFriendlyAuthErrorMessage(signInException))
                                 }
                             }
                     } else {
-                        continuation.resume(if (sharedPrefs.getString("app_language", "bn") == "bn") "এই ফোন নম্বর দিয়ে কোনো অ্যাকাউন্ট পাওয়া যায়নি!" else "No account found with this phone number!")
+                        continuation.resume(if (isBn) "এই ফোন নম্বর দিয়ে কোনো অ্যাকাউন্ট পাওয়া যায়নি!" else "No account found with this phone number!")
                     }
                 }
                 .addOnFailureListener { e ->
@@ -1509,6 +1743,36 @@ class ChatRepository(
             }
             .addOnFailureListener { e ->
                 continuation.resume("Failed to verify email uniqueness: ${e.localizedMessage}")
+            }
+    }
+
+    suspend fun updatePasswordInFirebase(newPass: String): String? = suspendCancellableCoroutine { continuation ->
+        val auth = firebaseAuth
+        val db = firestore
+        val phone = sharedPrefs.getString("logged_user_phone", "") ?: ""
+        if (auth == null || db == null || phone.isEmpty()) {
+            continuation.resume(null) // No-op if firebase not configured
+            return@suspendCancellableCoroutine
+        }
+
+        val currentUser = auth.currentUser
+        if (currentUser == null) {
+            continuation.resume(null)
+            return@suspendCancellableCoroutine
+        }
+
+        currentUser.updatePassword(newPass.trim())
+            .addOnSuccessListener {
+                db.collection("users").document(phone).update("passwordSecureHash", sha256(newPass.trim()))
+                    .addOnSuccessListener {
+                        continuation.resume(null)
+                    }
+                    .addOnFailureListener { e ->
+                        continuation.resume(e.localizedMessage)
+                    }
+            }
+            .addOnFailureListener { exception ->
+                continuation.resume(exception.localizedMessage)
             }
     }
 

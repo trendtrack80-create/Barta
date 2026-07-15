@@ -421,17 +421,6 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     passwordHash = cleanPass,
                     profilePicBase64 = profilePic
                 )
-                val isTechError = error != null && (
-                    error.lowercase().contains("api key") ||
-                    error.lowercase().contains("api keys") ||
-                    error.lowercase().contains("oauth2") ||
-                    error.lowercase().contains("internal error") ||
-                    error.lowercase().contains("google play services") ||
-                    error.lowercase().contains("firebase") ||
-                    error.lowercase().contains("firestore") ||
-                    error.lowercase().contains("permission-denied") ||
-                    error.lowercase().contains("uniqueness")
-                )
                 if (error == null) {
                     seedDummyContacts()
                     showOnboarding.value = true
@@ -441,47 +430,6 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     userStatusMessage.value = "বার্তা (Chat) ব্যবহার করছি!"
                     userEmail.value = finalEmail
                     callback(null)
-                } else if (isTechError) {
-                    // Firebase config or API key issue - fall back to local registration seamlessly so user is not blocked!
-                    val exists = repository.getUserByPhone(cleanPhone)
-                    if (exists != null) {
-                        sharedPrefs.edit()
-                            .putString("logged_user_phone", cleanPhone)
-                            .putString("logged_user_display_name", exists.name)
-                            .putString("logged_user_profile_pic", exists.profilePicBase64)
-                            .putString("logged_user_status_message", exists.status)
-                            .putString("logged_user_email", finalEmail)
-                            .apply()
-                        seedDummyContacts()
-                        showOnboarding.value = true
-                        _myNumber.value = cleanPhone
-                        userDisplayName.value = exists.name
-                        userProfilePicBase64.value = exists.profilePicBase64
-                        userStatusMessage.value = exists.status
-                        userEmail.value = finalEmail
-                        callback(null)
-                    } else {
-                        val registered = repository.registerLocalUser(cleanPhone, cleanName, cleanPass, profilePic)
-                        if (registered) {
-                            sharedPrefs.edit()
-                                .putString("logged_user_phone", cleanPhone)
-                                .putString("logged_user_display_name", cleanName)
-                                .putString("logged_user_profile_pic", profilePic)
-                                .putString("logged_user_status_message", "বার্তা (Chat) ব্যবহার করছি!")
-                                .putString("logged_user_email", finalEmail)
-                                .apply()
-                            seedDummyContacts()
-                            showOnboarding.value = true
-                            _myNumber.value = cleanPhone
-                            userDisplayName.value = cleanName
-                            userProfilePicBase64.value = profilePic
-                            userStatusMessage.value = "বার্তা (Chat) ব্যবহার করছি!"
-                            userEmail.value = finalEmail
-                            callback(null)
-                        } else {
-                            callback(error)
-                        }
-                    }
                 } else {
                     callback(error)
                 }
@@ -542,17 +490,6 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             if (isFirebaseConfigured.value) {
                 val error = repository.loginWithFirebaseAuth(cleanInput, cleanPass)
-                val isTechError = error != null && (
-                    error.lowercase().contains("api key") ||
-                    error.lowercase().contains("api keys") ||
-                    error.lowercase().contains("oauth2") ||
-                    error.lowercase().contains("internal error") ||
-                    error.lowercase().contains("google play services") ||
-                    error.lowercase().contains("firebase") ||
-                    error.lowercase().contains("firestore") ||
-                    error.lowercase().contains("permission-denied") ||
-                    error.lowercase().contains("failed to load user profile")
-                )
                 if (error == null) {
                     val phone = sharedPrefs.getString("logged_user_phone", "") ?: ""
                     val name = sharedPrefs.getString("logged_user_display_name", "") ?: ""
@@ -567,63 +504,6 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     userEmail.value = email
                     seedDummyContacts()
                     callback(null)
-                } else if (isTechError) {
-                    // Firebase config or API key issue - fall back to local database login seamlessly!
-                    val isEmail = cleanInput.contains("@")
-                    val derivedPhone = if (isEmail) {
-                        val emailHash = Math.abs(cleanInput.lowercase().hashCode()) % 1000000000
-                        "01" + String.format(java.util.Locale.US, "%09d", emailHash)
-                    } else {
-                        cleanInput
-                    }
-                    val user = repository.getUserByPhone(derivedPhone)
-                    
-                    if (user != null) {
-                        if (user.passwordHash == cleanPass) {
-                            _myNumber.value = user.phone
-                            userDisplayName.value = user.name
-                            userProfilePicBase64.value = user.profilePicBase64
-                            userStatusMessage.value = user.status
-                            userEmail.value = if (isEmail) cleanInput else "${user.phone}@bartachat.com"
-                            
-                            sharedPrefs.edit()
-                                .putString("logged_user_phone", user.phone)
-                                .putString("logged_user_display_name", user.name)
-                                .putString("logged_user_profile_pic", user.profilePicBase64)
-                                .putString("logged_user_status_message", user.status)
-                                .putString("logged_user_email", if (isEmail) cleanInput else "${user.phone}@bartachat.com")
-                                .apply()
-                            
-                            seedDummyContacts()
-                            callback(null)
-                        } else {
-                            callback(if (isBn) "ভুল পাসওয়ার্ড! আবার চেষ্টা করুন।" else "Incorrect password! Please try again.")
-                        }
-                    } else {
-                        // If they enter a valid email/phone but it doesn't exist locally, we can auto-register them
-                        val fallbackName = cleanInput.substringBefore("@")
-                        val registered = repository.registerLocalUser(derivedPhone, fallbackName, cleanPass, "")
-                        if (registered) {
-                            _myNumber.value = derivedPhone
-                            userDisplayName.value = fallbackName
-                            userProfilePicBase64.value = ""
-                            userStatusMessage.value = "বার্তা (Chat) ব্যবহার করছি!"
-                            userEmail.value = cleanInput.lowercase()
-                            
-                            sharedPrefs.edit()
-                                .putString("logged_user_phone", derivedPhone)
-                                .putString("logged_user_display_name", fallbackName)
-                                .putString("logged_user_profile_pic", "")
-                                .putString("logged_user_status_message", "বার্তা (Chat) ব্যবহার করছি!")
-                                .putString("logged_user_email", cleanInput.lowercase())
-                                .apply()
-                                
-                            seedDummyContacts()
-                            callback(null)
-                        } else {
-                            callback(error)
-                        }
-                    }
                 } else {
                     callback(error)
                 }
@@ -668,6 +548,33 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     seedDummyContacts()
                     callback(null)
                 }
+            }
+        }
+    }
+
+    fun loginWithGoogleToken(idToken: String, callback: (String?) -> Unit) {
+        viewModelScope.launch {
+            if (isFirebaseConfigured.value) {
+                val error = repository.loginWithGoogleCredential(idToken)
+                if (error == null) {
+                    val phone = sharedPrefs.getString("logged_user_phone", "") ?: ""
+                    val name = sharedPrefs.getString("logged_user_display_name", "") ?: ""
+                    val pic = sharedPrefs.getString("logged_user_profile_pic", "") ?: ""
+                    val status = sharedPrefs.getString("logged_user_status_message", "বার্তা (Chat) ব্যবহার করছি!") ?: "বার্তা (Chat) ব্যবহার করছি!"
+                    val email = sharedPrefs.getString("logged_user_email", "") ?: ""
+                    
+                    _myNumber.value = phone
+                    userDisplayName.value = name
+                    userProfilePicBase64.value = pic
+                    userStatusMessage.value = status
+                    userEmail.value = email
+                    seedDummyContacts()
+                    callback(null)
+                } else {
+                    callback(error)
+                }
+            } else {
+                callback("Firebase is not configured correctly on this device.")
             }
         }
     }
@@ -730,6 +637,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             if (loadedUser != null) {
                 val updated = loadedUser.copy(passwordHash = cleanPass)
                 repository.updateUser(updated)
+                if (isFirebaseConfigured.value) {
+                    repository.updatePasswordInFirebase(cleanPass)
+                }
                 callback(null)
             } else {
                 callback("ইউজার রেকর্ড খুঁজে পাওয়া যায়নি!")
