@@ -88,6 +88,102 @@ import androidx.credentials.GetCredentialRequest
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 
+fun getCertificateFingerprints(context: android.content.Context): Pair<String, String> {
+    try {
+        val packageInfo = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            context.packageManager.getPackageInfo(
+                context.packageName,
+                android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            context.packageManager.getPackageInfo(
+                context.packageName,
+                @Suppress("DEPRECATION")
+                android.content.pm.PackageManager.GET_SIGNATURES
+            )
+        }
+        
+        val signatures = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            packageInfo.signingInfo?.apkContentsSigners
+        } else {
+            @Suppress("DEPRECATION")
+            packageInfo.signatures
+        }
+        
+        if (signatures != null && signatures.isNotEmpty()) {
+            val cert = signatures[0].toByteArray()
+            val mdSha1 = java.security.MessageDigest.getInstance("SHA-1")
+            val mdSha256 = java.security.MessageDigest.getInstance("SHA-256")
+            val sha1Bytes = mdSha1.digest(cert)
+            val sha256Bytes = mdSha256.digest(cert)
+            val sha1 = sha1Bytes.joinToString(":") { "%02X".format(it) }
+            val sha256 = sha256Bytes.joinToString(":") { "%02X".format(it) }
+            return Pair(sha1, sha256)
+        }
+    } catch (e: Exception) {
+        android.util.Log.e("BartaChatAudit", "Error extracting certificate fingerprints: ${e.localizedMessage}", e)
+    }
+    return Pair("Unknown", "Unknown")
+}
+
+fun performGoogleSignInAudit(context: android.content.Context, webClientId: String, viewModel: ChatViewModel, error: Throwable?) {
+    val tag = "BartaChatAudit"
+    val (sha1, sha256) = getCertificateFingerprints(context)
+    val pkgName = context.packageName
+    val apiKey = viewModel.firebaseApiKey.value
+    val projectId = viewModel.firebaseProjectId.value
+    val appId = viewModel.firebaseAppId.value
+
+    android.util.Log.e(tag, "==========================================================================")
+    android.util.Log.e(tag, "                  GOOGLE SIGN-IN AUDIT REPORT                             ")
+    android.util.Log.e(tag, "==========================================================================")
+    android.util.Log.e(tag, "1. Android App Configuration:")
+    android.util.Log.e(tag, "   - Package Name / Application ID: $pkgName")
+    android.util.Log.e(tag, "   - Signing Certificate SHA-1   : $sha1")
+    android.util.Log.e(tag, "   - Signing Certificate SHA-256 : $sha256")
+    android.util.Log.e(tag, "")
+    android.util.Log.e(tag, "2. Firebase Project Configuration (Programmatic):")
+    android.util.Log.e(tag, "   - Project ID                  : $projectId")
+    android.util.Log.e(tag, "   - API Key                     : $apiKey")
+    android.util.Log.e(tag, "   - App ID                      : $appId")
+    android.util.Log.e(tag, "   - Note: google-services.json is not present on disk. Firebase is initialized programmatically.")
+    android.util.Log.e(tag, "")
+    android.util.Log.e(tag, "3. Google Sign-In Configuration:")
+    android.util.Log.e(tag, "   - Requesting Web Client ID    : $webClientId")
+    
+    // Check project consistency
+    val appIdProjectNumber = appId.split(":").getOrNull(1) ?: ""
+    val clientIdProjectNumber = webClientId.split("-").getOrNull(0) ?: ""
+    if (appIdProjectNumber.isNotEmpty() && clientIdProjectNumber.isNotEmpty()) {
+        if (appIdProjectNumber == clientIdProjectNumber) {
+            android.util.Log.e(tag, "   - Project Number Consistency  : MATCHED ($appIdProjectNumber)")
+        } else {
+            android.util.Log.e(tag, "   - Project Number Consistency  : MISMATCHED!")
+            android.util.Log.e(tag, "     * App ID project number: $appIdProjectNumber")
+            android.util.Log.e(tag, "     * Client ID project number: $clientIdProjectNumber")
+        }
+    }
+    android.util.Log.e(tag, "")
+    if (error != null) {
+        android.util.Log.e(tag, "4. Authentication Failure Reason:")
+        android.util.Log.e(tag, "   - Exception: ${error.javaClass.name}")
+        android.util.Log.e(tag, "   - Message  : ${error.localizedMessage}")
+        android.util.Log.e(tag, "   - Cause    : ${error.cause?.localizedMessage}")
+        android.util.Log.e(tag, "")
+        android.util.Log.e(tag, "5. Remediation Steps:")
+        android.util.Log.e(tag, "   If error code is [28444] or similar:")
+        android.util.Log.e(tag, "   A. Open Firebase Console -> Project Settings -> General.")
+        android.util.Log.e(tag, "   B. Under 'Your apps', find/add the Android App with Package Name '$pkgName'.")
+        android.util.Log.e(tag, "   C. Add SHA-1 and SHA-256 fingerprints: ")
+        android.util.Log.e(tag, "      SHA-1  : $sha1")
+        android.util.Log.e(tag, "      SHA-256: $sha256")
+        android.util.Log.e(tag, "   D. Under Authentication -> Sign-in method, ensure 'Google' provider is enabled.")
+        android.util.Log.e(tag, "   E. Ensure the Web Client ID '$webClientId' matches the auto-generated Web client ID in the GCP credentials page.")
+    }
+    android.util.Log.e(tag, "==========================================================================")
+}
+
 fun triggerGoogleSignIn(
     context: android.content.Context,
     coroutineScope: kotlinx.coroutines.CoroutineScope,
@@ -97,6 +193,9 @@ fun triggerGoogleSignIn(
     val credentialManager = CredentialManager.create(context)
     val webClientId = "1077849519942-88i4ndunf6uofsn92aavki9ic7433842.apps.googleusercontent.com" // Default derived Web Client ID
     
+    // Perform audit logs at start of flow
+    performGoogleSignInAudit(context, webClientId, viewModel, null)
+
     val googleIdOption = GetGoogleIdOption.Builder()
         .setFilterByAuthorizedAccounts(false)
         .setServerClientId(webClientId)
@@ -108,6 +207,15 @@ fun triggerGoogleSignIn(
         .build()
 
     coroutineScope.launch {
+        // Clear cached credential state (tokens) before starting a new sign-in
+        try {
+            android.util.Log.d("BartaChatAudit", "Clearing credential state before requesting Google login...")
+            credentialManager.clearCredentialState(androidx.credentials.ClearCredentialStateRequest())
+            android.util.Log.d("BartaChatAudit", "Credential state successfully cleared.")
+        } catch (ex: Exception) {
+            android.util.Log.e("BartaChatAudit", "Failed to clear credential state: ${ex.localizedMessage}", ex)
+        }
+
         try {
             val result = credentialManager.getCredential(
                 context = context,
@@ -123,10 +231,36 @@ fun triggerGoogleSignIn(
                 onResult("Unsupported credential type received.")
             }
         } catch (e: Exception) {
+            // Run full audit log with error details
+            performGoogleSignInAudit(context, webClientId, viewModel, e)
+
             val isBn = viewModel.appLanguage.value == "bn"
             val errMsg = e.localizedMessage ?: "Google Sign-In failed"
+            
             if (errMsg.contains("16:") || errMsg.contains("Canceled") || errMsg.contains("cancel")) {
                 onResult(if (isBn) "গুগল সাইন-ইন বাতিল করা হয়েছে।" else "Google Sign-In cancelled.")
+            } else if (errMsg.contains("28444") || errMsg.contains("Developer console is not set up correctly")) {
+                val (sha1, sha256) = getCertificateFingerprints(context)
+                val pkgName = context.packageName
+                if (isBn) {
+                    onResult(
+                        "গুগল সাইন-ইন ব্যর্থ হয়েছে: [28444] ডেভেলপার কনসোল সঠিকভাবে সেটআপ করা হয়নি।\n\n" +
+                        "অনুগ্রহ করে ফায়ারবেস/গুগল ক্লাউড কনসোলে এই তথ্যগুলো যোগ করুন:\n" +
+                        "• প্যাকেজ নাম: $pkgName\n" +
+                        "• SHA-1 ফিঙ্গারপ্রিন্ট: $sha1\n" +
+                        "• SHA-256 ফিঙ্গারপ্রিন্ট: $sha256\n" +
+                        "• ক্লায়েন্ট আইডি: $webClientId"
+                    )
+                } else {
+                    onResult(
+                        "Google Sign-In failed: [28444] Developer console is not set up correctly.\n\n" +
+                        "Please register this Android app in your Firebase/GCP Console with:\n" +
+                        "• Package Name: $pkgName\n" +
+                        "• SHA-1 Fingerprint: $sha1\n" +
+                        "• SHA-256 Fingerprint: $sha256\n" +
+                        "• Client ID: $webClientId"
+                    )
+                }
             } else {
                 onResult(errMsg)
             }
